@@ -26,17 +26,22 @@ export class ApiError extends Error {
   }
 }
 
-function getAuthToken(): string | null {
-  // Placeholder — wired up once auth (useAuth) lands. Reads the stored JWT, if any.
-  return localStorage.getItem("auth_token");
+// The JWT lives in memory only, never localStorage — a page reload logs the
+// user out, which is the deliberate tradeoff for not persisting a bearer
+// token somewhere an XSS payload could read it. useAuth (src/hooks/useAuth.tsx)
+// is the only caller of setAuthToken; every other module just reads through
+// api.* and gets the header attached automatically.
+let authToken: string | null = null;
+
+export function setAuthToken(token: string | null): void {
+  authToken = token;
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const token = getAuthToken();
   const headers = new Headers(init.headers);
   headers.set("Content-Type", "application/json");
-  if (token) {
-    headers.set("Authorization", `Bearer ${token}`);
+  if (authToken) {
+    headers.set("Authorization", `Bearer ${authToken}`);
   }
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -60,6 +65,8 @@ export const api = {
   get: <T>(path: string) => request<T>(path, { method: "GET" }),
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "POST", body: body ? JSON.stringify(body) : undefined }),
+  put: <T>(path: string, body?: unknown) =>
+    request<T>(path, { method: "PUT", body: body ? JSON.stringify(body) : undefined }),
   patch: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "PATCH", body: body ? JSON.stringify(body) : undefined }),
   delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
