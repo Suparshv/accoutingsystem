@@ -23,11 +23,11 @@ from decimal import ROUND_HALF_UP, Decimal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.core.enums import BudgetLineType, BudgetState
+from app.core.enums import BudgetLineType, BudgetState, DocumentState
 from app.core.errors import AppError
 from app.models.budget import Budget, BudgetLine
 from app.models.purchase import VendorBill, VendorBillLine
-from app.services._sales_bridge import customer_invoice_lines, customer_invoices
+from app.models.sales import CustomerInvoice, CustomerInvoiceLine
 
 ZERO = Decimal("0.00")
 
@@ -108,17 +108,18 @@ def compute_achieved_amount(
             )
         )
     else:
-        cil = customer_invoice_lines
-        ci = customer_invoices
         stmt = (
-            select(func.coalesce(func.sum(cil.c.line_total), ZERO))
-            .select_from(cil)
-            .join(ci, ci.c.id == cil.c.customer_invoice_id)
+            select(func.coalesce(func.sum(CustomerInvoiceLine.line_total), ZERO))
+            .select_from(CustomerInvoiceLine)
+            .join(
+                CustomerInvoice,
+                CustomerInvoice.id == CustomerInvoiceLine.customer_invoice_id,
+            )
             .where(
-                cil.c.analytic_account_id == analytic_account_id,
-                ci.c.state == "confirmed",
-                ci.c.invoice_date >= start_date,
-                ci.c.invoice_date <= end_date,
+                CustomerInvoiceLine.analytic_account_id == analytic_account_id,
+                CustomerInvoice.state == DocumentState.CONFIRMED,
+                CustomerInvoice.invoice_date >= start_date,
+                CustomerInvoice.invoice_date <= end_date,
             )
         )
 
@@ -160,24 +161,25 @@ def list_source_documents(db: Session, line: BudgetLine) -> list[dict]:
         )
         document_type = "vendor_bill"
     else:
-        cil = customer_invoice_lines
-        ci = customer_invoices
         stmt = (
             select(
-                ci.c.number,
-                ci.c.invoice_date.label("document_date"),
-                ci.c.customer_id.label("partner_id"),
-                cil.c.line_total,
+                CustomerInvoice.number,
+                CustomerInvoice.invoice_date.label("document_date"),
+                CustomerInvoice.customer_id.label("partner_id"),
+                CustomerInvoiceLine.line_total,
             )
-            .select_from(cil)
-            .join(ci, ci.c.id == cil.c.customer_invoice_id)
+            .select_from(CustomerInvoiceLine)
+            .join(
+                CustomerInvoice,
+                CustomerInvoice.id == CustomerInvoiceLine.customer_invoice_id,
+            )
             .where(
-                cil.c.analytic_account_id == line.analytic_account_id,
-                ci.c.state == "confirmed",
-                ci.c.invoice_date >= budget.start_date,
-                ci.c.invoice_date <= budget.end_date,
+                CustomerInvoiceLine.analytic_account_id == line.analytic_account_id,
+                CustomerInvoice.state == DocumentState.CONFIRMED,
+                CustomerInvoice.invoice_date >= budget.start_date,
+                CustomerInvoice.invoice_date <= budget.end_date,
             )
-            .order_by(ci.c.invoice_date)
+            .order_by(CustomerInvoice.invoice_date)
         )
         document_type = "customer_invoice"
 

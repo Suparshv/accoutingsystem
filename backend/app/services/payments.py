@@ -34,7 +34,7 @@ from app.core.errors import AppError
 from app.models.account import Account, Journal
 from app.models.payment import Payment
 from app.models.purchase import VendorBill
-from app.services._sales_bridge import customer_invoices
+from app.models.sales import CustomerInvoice
 from app.services.accounting import LineInput, post_journal_entry
 from app.services.sequences import _lock_sequence_row
 
@@ -135,17 +135,14 @@ def bill_payment_summary(db: Session, bill: VendorBill) -> PaymentSummary:
 
 
 def invoice_payment_summary(db: Session, invoice_id: int) -> PaymentSummary:
-    """Same computation for an invoice, read through the sales bridge."""
-    row = db.execute(
-        select(
-            customer_invoices.c.total_amount,
-            customer_invoices.c.state,
-        ).where(customer_invoices.c.id == invoice_id)
-    ).one_or_none()
-    if row is None:
+    """Same computation for an invoice."""
+    invoice = db.get(CustomerInvoice, invoice_id)
+    if invoice is None:
         raise AppError(404, "NOT_FOUND", f"Invoice {invoice_id} does not exist.")
 
-    return summarise(Decimal(row.total_amount), amount_paid_for_invoice(db, invoice_id))
+    return summarise(
+        Decimal(invoice.total_amount), amount_paid_for_invoice(db, invoice_id)
+    )
 
 
 # --- registration -----------------------------------------------------------
@@ -386,20 +383,18 @@ def _target_summary(
             )
         return bill_payment_summary(db, bill)
 
-    row = db.execute(
-        select(customer_invoices.c.total_amount, customer_invoices.c.state).where(
-            customer_invoices.c.id == invoice_id
-        )
-    ).one_or_none()
-    if row is None:
+    invoice = db.get(CustomerInvoice, invoice_id)
+    if invoice is None:
         raise AppError(404, "NOT_FOUND", f"Invoice {invoice_id} does not exist.")
-    if row.state != DocumentState.CONFIRMED.value:
+    if invoice.state is not DocumentState.CONFIRMED:
         raise AppError(
             422,
             "DOCUMENT_NOT_CONFIRMED",
             "A draft invoice cannot be paid. Confirm it first.",
         )
-    return summarise(Decimal(row.total_amount), amount_paid_for_invoice(db, invoice_id))
+    return summarise(
+        Decimal(invoice.total_amount), amount_paid_for_invoice(db, invoice_id)
+    )
 
 
 def _control_account(db: Session, account_type: AccountType, label: str) -> Account:

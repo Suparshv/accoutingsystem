@@ -11,12 +11,12 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import text
 
 from app.core.enums import BudgetLineType, BudgetState, DocumentState
 from app.core.errors import AppError
 from app.models.budget import Budget, BudgetLine
 from app.models.purchase import VendorBill, VendorBillLine
+from app.models.sales import CustomerInvoice, CustomerInvoiceLine
 from app.services import budgets as budgets_service
 from app.services import purchase as purchase_service
 
@@ -82,34 +82,40 @@ def _bill(
     return bill
 
 
-def _invoice(db, seed, *, amount: str, when: date, analytic_id, state="confirmed"):
-    """Insert a customer invoice through the temporary sales stub.
-
-    models/sales.py is a teammate's; these raw inserts go away with the stub.
+def _invoice(
+    db,
+    seed,
+    *,
+    amount: str,
+    when: date,
+    analytic_id,
+    state: DocumentState = DocumentState.CONFIRMED,
+) -> CustomerInvoice:
+    """Build a real CustomerInvoice + CustomerInvoiceLine (§7.7), mirroring
+    _bill()'s pattern now that models/sales.py has merged in — the raw-SQL
+    stub this used to insert against has retired itself as designed.
     """
-    invoice_id = db.execute(
-        text(
-            "INSERT INTO customer_invoices "
-            "(number, customer_id, invoice_date, state, total_amount) "
-            "VALUES (:n, :c, :d, :s, :t) RETURNING id"
-        ),
-        {
-            "n": f"INV/2026/{when.day:04d}",
-            "c": seed["partner_id"],
-            "d": when,
-            "s": state,
-            "t": Decimal(amount),
-        },
-    ).scalar_one()
-    db.execute(
-        text(
-            "INSERT INTO customer_invoice_lines "
-            "(customer_invoice_id, analytic_account_id, line_total) "
-            "VALUES (:i, :a, :t)"
-        ),
-        {"i": invoice_id, "a": analytic_id, "t": Decimal(amount)},
+    invoice = CustomerInvoice(
+        number=f"INV/2026/{when.day:04d}",
+        customer_id=seed["partner_id"],
+        invoice_date=when,
+        state=state,
     )
-    return invoice_id
+    invoice.lines.append(
+        CustomerInvoiceLine(
+            product_id=seed["table"].id,
+            account_id=seed["sales_income"].id,
+            analytic_account_id=analytic_id,
+            quantity=Decimal("1.00"),
+            unit_price=Decimal(amount),
+            line_total=Decimal(amount),
+            sequence=10,
+        )
+    )
+    invoice.total_amount = Decimal(amount)
+    db.add(invoice)
+    db.flush()
+    return invoice
 
 
 # --- ★ Scenario: expense achievement sums vendor bill lines ----------------
