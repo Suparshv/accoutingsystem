@@ -1,0 +1,21 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16
+    container_name: urbanfurniture-db
+    environment:
+      POSTGRES_DB: urbanfurniture
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: admin123
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d urbanfurniture"]
+      interval: 5s
+      retries: 5
+
+volumes:
+  pgdata:
