@@ -1,13 +1,13 @@
 import { NavLink } from "react-router-dom";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/hooks/useAuth";
+import type { UserRole } from "@/types/api";
 
 type NavItem = { label: string; href: string };
 type NavGroup = { label: string | null; items: NavItem[] };
 
-// SPEC.md §13.3 — exact menu structure. role_visibility (hiding items per
-// role) is not implemented yet: it needs auth, which doesn't exist yet.
-// Every item is shown to everyone for now.
-const NAV_GROUPS: NavGroup[] = [
+// SPEC.md §13.3 — exact menu structure for admin/accountant.
+const MAIN_GROUPS: NavGroup[] = [
   { label: null, items: [{ label: "Dashboard", href: "/" }] },
   {
     label: "Sales",
@@ -48,12 +48,45 @@ const NAV_GROUPS: NavGroup[] = [
   },
 ];
 
+// SPEC.md §13.3 role_visibility: "contact: sees ONLY the portal — My
+// Invoices, My Bills. No masters, no reports." Those portal pages aren't
+// built yet (next phase), so these links exist but 404 until they land —
+// same situation every other unbuilt nav item in MAIN_GROUPS is already in.
+const PORTAL_GROUPS: NavGroup[] = [
+  {
+    label: "Portal",
+    items: [
+      { label: "My Invoices", href: "/portal/invoices" },
+      { label: "My Bills", href: "/portal/bills" },
+    ],
+  },
+];
+
+const USERS_ITEM: NavItem = { label: "Users", href: "/settings/users" };
+
+// SPEC.md §13.3 role_visibility: accountant sees everything except user
+// management; admin sees everything plus Users.
+function visibleGroupsFor(role: UserRole | undefined): NavGroup[] {
+  if (role === "contact") return PORTAL_GROUPS;
+
+  if (role === "admin") {
+    return MAIN_GROUPS.map((group) =>
+      group.label === "Account" ? { ...group, items: [...group.items, USERS_ITEM] } : group,
+    );
+  }
+
+  return MAIN_GROUPS;
+}
+
 type SidebarProps = {
   open: boolean;
   onClose: () => void;
 };
 
 export function Sidebar({ open, onClose }: SidebarProps) {
+  const { user } = useAuth();
+  const navGroups = visibleGroupsFor(user?.role);
+
   return (
     <>
       {/* Mobile backdrop — SPEC.md §13.1: sidebar collapses to a hamburger drawer below 768px */}
@@ -79,7 +112,7 @@ export function Sidebar({ open, onClose }: SidebarProps) {
         </div>
 
         <nav className="flex-1 space-y-4 overflow-y-auto px-2 py-4">
-          {NAV_GROUPS.map((group) => (
+          {navGroups.map((group) => (
             <div key={group.label ?? "root"}>
               {group.label && (
                 <p className="px-2 pb-1 text-xs font-medium uppercase tracking-wide text-text_secondary">
