@@ -77,7 +77,7 @@ class JournalEntryState(str, Enum):
 
 
 class DocumentState(str, Enum):
-    """Lifecycle of a purchase order, bill, sales order or invoice."""
+    """Lifecycle of a source document: sales/purchase orders, bills, invoices."""
 
     DRAFT = "draft"
     CONFIRMED = "confirmed"
@@ -100,7 +100,8 @@ class PaymentState(str, Enum):
 
 
 class PaymentStatus(str, Enum):
-    """Derived from confirmed payments against a document. NEVER a column (R5)."""
+    """Derived, never stored (§7.7 computed_not_stored) — computed on read
+    from confirmed payments against a document. Not a payments.state value."""
 
     NOT_PAID = "not_paid"
     PARTIAL = "partial"

@@ -12,12 +12,17 @@ from app.routers import (
     analytics,
     auth,
     budgets,
+    customer_invoices,
+    dashboard,
     journal_entries,
     journals,
     partners,
     payments,
+    portal,
     products,
     purchase_orders,
+    reports,
+    sales_orders,
     vendor_bills,
 )
 
@@ -60,6 +65,11 @@ app.include_router(purchase_orders.router, prefix=API_PREFIX)
 app.include_router(vendor_bills.router, prefix=API_PREFIX)
 app.include_router(payments.router, prefix=API_PREFIX)
 app.include_router(budgets.router, prefix=API_PREFIX)
+app.include_router(sales_orders.router, prefix=API_PREFIX)
+app.include_router(customer_invoices.router, prefix=API_PREFIX)
+app.include_router(reports.router, prefix=API_PREFIX)
+app.include_router(dashboard.router, prefix=API_PREFIX)
+app.include_router(portal.router, prefix=API_PREFIX)
 
 
 @app.get("/api/health")

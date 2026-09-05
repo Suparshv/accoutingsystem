@@ -17,5 +17,11 @@ from app.models.purchase import (  # noqa: F401
     VendorBill,
     VendorBillLine,
 )
+from app.models.sales import (  # noqa: F401
+    CustomerInvoice,
+    CustomerInvoiceLine,
+    SalesOrder,
+    SalesOrderLine,
+)
 from app.models.sequence import Sequence  # noqa: F401
 from app.models.user import User  # noqa: F401

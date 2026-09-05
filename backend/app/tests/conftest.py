@@ -37,6 +37,7 @@ from app.core.enums import (
     AccountType,
     JournalType,
     PartnerType,
+    ProductType,
     UserRole,
 )
 from app.core.security import encode_token, hash_password
@@ -44,6 +45,7 @@ from app.database import Base, get_db
 from app.main import app
 from app.models.account import Account, Journal
 from app.models.partner import Partner
+from app.models.product import Product
 from app.models.user import User
 
 # A separate database, so a test run never touches development data.
@@ -248,13 +250,35 @@ def ledger(db: Session) -> dict:
         account_type=AccountType.OTHER_EXPENSE,
         is_archived=True,
     )
-    db.add_all([debtors, bank, creditors, purchase_expense, other_expense, archived])
+    # Sales Income A/c — added for the sales cycle (SPEC.md §7.7, §10.6).
+    # Purely additive: existing tests key off the other accounts above and
+    # never enumerate this dict's keys.
+    sales_income = Account(
+        code="4000",
+        name="Sales Income A/c",
+        account_group=AccountGroup.PROFIT_AND_LOSS,
+        account_type=AccountType.INCOME,
+    )
+    db.add_all(
+        [
+            debtors,
+            bank,
+            creditors,
+            purchase_expense,
+            other_expense,
+            archived,
+            sales_income,
+        ]
+    )
     db.flush()
 
     bank_journal = Journal(
         name="Bank", journal_type=JournalType.BANK, default_account_id=bank.id
     )
-    db.add(bank_journal)
+    sales_journal = Journal(
+        name="Sales", journal_type=JournalType.SALES, default_account_id=sales_income.id
+    )
+    db.add_all([bank_journal, sales_journal])
     db.flush()
 
     partner = Partner(name="Mr Rahul", partner_type=PartnerType.customer)
@@ -268,7 +292,9 @@ def ledger(db: Session) -> dict:
         "purchase_expense": purchase_expense,
         "other_expense": other_expense,
         "archived": archived,
+        "sales_income": sales_income,
         "journal": bank_journal,
+        "sales_journal": sales_journal,
         "partner_id": partner.id,
         "ten_thousand": Decimal("10000.00"),
     }
@@ -314,3 +340,17 @@ def purchase_ledger(db: Session, ledger: dict) -> dict:
         "project_one": project_one,
         "project_two": project_two,
     }
+
+
+@pytest.fixture()
+def product(db: Session) -> Product:
+    """One goods product, for sales-cycle tests (SPEC.md §7.7)."""
+    product = Product(
+        name="Table",
+        product_type=ProductType.goods,
+        sales_price=Decimal("2000.00"),
+        cost_price=Decimal("1500.00"),
+    )
+    db.add(product)
+    db.flush()
+    return product
