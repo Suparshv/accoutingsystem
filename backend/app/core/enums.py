@@ -1,8 +1,8 @@
-"""Enumerations shared across the ledger (SPEC.md §7.1).
+"""Every enum in one place (SPEC.md §7.1 / file layout note in §4).
 
-Only the ledger enums live here so far. The masters enums (user_role,
-partner_type, product_type) are being added in parallel — append, do not
-reorganise.
+Two slices live here: the auth and masters enums (users, partners, products)
+and the ledger enums (accounts, journals, journal entries). Append new ones
+rather than starting a second file.
 
 Every member's *value* is what Postgres stores, which is why the models pass
 ``values_callable`` to SQLAlchemy's Enum: without it SQLAlchemy would persist
@@ -10,6 +10,30 @@ the member *name* ("BALANCE_SHEET") instead of the value ("balance_sheet").
 """
 
 from enum import Enum
+
+
+# --- auth and masters -------------------------------------------------------
+
+
+class UserRole(str, Enum):
+    admin = "admin"
+    accountant = "accountant"
+    contact = "contact"
+
+
+class PartnerType(str, Enum):
+    customer = "customer"
+    vendor = "vendor"
+    both = "both"
+
+
+class ProductType(str, Enum):
+    goods = "goods"
+    service = "service"
+    combo = "combo"
+
+
+# --- ledger -----------------------------------------------------------------
 
 
 class AccountGroup(str, Enum):
@@ -71,30 +95,3 @@ ACCOUNT_TYPES_BY_GROUP: dict[AccountGroup, tuple[AccountType, ...]] = {
 def is_group_type_consistent(group: AccountGroup, account_type: AccountType) -> bool:
     """True when this account_type is legal for this account_group."""
     return account_type in ACCOUNT_TYPES_BY_GROUP[group]
-"""Every enum in one place (SPEC.md §7.1 / file layout note in §4).
-
-This module only owns the enums for the auth and masters slice (users,
-partners, products). Ledger-side enums (account_type, journal_type,
-document_state, ...) belong to whoever builds models/account.py and
-models/journal_entry.py — add them below rather than starting a second file.
-"""
-
-import enum
-
-
-class UserRole(str, enum.Enum):
-    admin = "admin"
-    accountant = "accountant"
-    contact = "contact"
-
-
-class PartnerType(str, enum.Enum):
-    customer = "customer"
-    vendor = "vendor"
-    both = "both"
-
-
-class ProductType(str, enum.Enum):
-    goods = "goods"
-    service = "service"
-    combo = "combo"

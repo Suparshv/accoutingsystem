@@ -4,13 +4,28 @@ Every error the API returns has the same shape::
 
     {"error": {"code", "message", "details", "correlation_id"}}
 
-Services raise these; they know nothing about HTTP beyond carrying the status
-code that the handler in ``main.py`` turns into a response. That keeps
-``services/`` free of FastAPI imports while still letting one raise site decide
-between 404 and 422.
-"""AppError hierarchy and the FastAPI handlers that shape every error
-response into the SPEC.md §12.1 envelope: {error: {code, message, details,
-correlation_id}}.
+Services raise an AppError; they know nothing about HTTP beyond carrying the
+status code that a handler turns into a response. That keeps ``services/``
+free of FastAPI imports while still letting one raise site decide between 404
+and 422.
+
+``register_exception_handlers`` wires the four handlers §12.1 requires, so no
+route in the app can return a differently-shaped error body.
+
+AppError supports two calling conventions, both of which are in use:
+
+* the explicit form, where the raise site supplies everything ::
+
+      raise AppError(404, "NOT_FOUND", "Partner not found.")
+
+* the subclass form, where the class supplies the code and status ::
+
+      raise NotFoundError("Account 7 does not exist.")
+      raise UnbalancedEntryError(total_debit=d, total_credit=c, difference=x)
+
+The subclasses are worth having wherever a specific failure is raised from
+more than one place or carries structured details, because the code and the
+status then live in exactly one spot.
 """
 
 from __future__ import annotations
@@ -20,7 +35,13 @@ import uuid
 from decimal import Decimal
 from typing import Any
 
-logger = logging.getLogger(__name__)
+from fastapi import FastAPI, Request, status
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+logger = logging.getLogger("app.errors")
 
 
 class AppError(Exception):
@@ -34,27 +55,29 @@ class AppError(Exception):
     status_code: int = 422
     message: str = "The request could not be processed."
 
-    def __init__(
-        self,
-        message: str | None = None,
-        *,
-        details: dict[str, Any] | None = None,
-    ) -> None:
-        self.message = message or self.__class__.message
+    def __init__(self, *args: Any, details: dict[str, Any] | None = None) -> None:
+        if args and isinstance(args[0], int):
+            # Explicit form: AppError(status_code, code, message[, details]).
+            self.status_code = args[0]
+            self.code = args[1]
+            self.message = args[2]
+            if len(args) > 3 and details is None:
+                details = args[3]
+        else:
+            # Subclass form: class attributes supply the code and the status,
+            # and the single optional positional argument overrides the message.
+            override = args[0] if args else None
+            self.message = override or type(self).message
+
         self.details = details
+        # Generated once, here, so the id written to the log is the same id the
+        # client is shown — that is the whole point of a correlation id.
         self.correlation_id = str(uuid.uuid4())
         super().__init__(self.message)
 
     def to_envelope(self) -> dict[str, Any]:
         """Render the §12.1 error envelope."""
-        return {
-            "error": {
-                "code": self.code,
-                "message": self.message,
-                "details": self.details,
-                "correlation_id": self.correlation_id,
-            }
-        }
+        return _envelope(self.code, self.message, self.details, self.correlation_id)
 
 
 # --- ledger errors (SPEC.md §8.1) -------------------------------------------
@@ -141,40 +164,25 @@ class ConflictError(AppError):
     code = "IN_USE"
     status_code = 409
     message = "The resource is in use and cannot be changed."
-from typing import Any
-
-from fastapi import FastAPI, Request, status
-from fastapi.encoders import jsonable_encoder
-from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
-from starlette.exceptions import HTTPException as StarletteHTTPException
-
-logger = logging.getLogger("app.errors")
 
 
-class AppError(Exception):
-    """Base class for every deliberately-raised API error.
+# --- handlers (SPEC.md §12.1) -----------------------------------------------
 
-    Carries everything the §12.1 envelope needs: an HTTP status, a
-    SCREAMING_SNAKE_CASE code, a message safe to show verbatim in a toast,
-    and optional structured details.
-    """
-
-    def __init__(
-        self,
-        status_code: int,
-        code: str,
-        message: str,
-        details: dict[str, Any] | None = None,
-    ) -> None:
-        super().__init__(message)
-        self.status_code = status_code
-        self.code = code
-        self.message = message
-        self.details = details
+# Framework-raised failures carry no code of their own, so map the statuses
+# that mean something specific in this API. 405 is how a posted journal entry
+# refuses DELETE — immutability by absence of a route (R4).
+_HTTP_STATUS_CODES = {
+    401: "TOKEN_INVALID",
+    403: "INSUFFICIENT_ROLE",
+    404: "NOT_FOUND",
+    405: "METHOD_NOT_ALLOWED",
+    409: "IN_USE",
+}
 
 
-def _envelope(code: str, message: str, details: Any, correlation_id: str) -> dict:
+def _envelope(
+    code: str, message: str, details: Any, correlation_id: str
+) -> dict[str, Any]:
     return {
         "error": {
             "code": code,
@@ -186,17 +194,15 @@ def _envelope(code: str, message: str, details: Any, correlation_id: str) -> dic
 
 
 async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
-    correlation_id = str(uuid.uuid4())
-    logger.warning("AppError %s: %s [%s]", exc.code, exc.message, correlation_id)
-    return JSONResponse(
-        status_code=exc.status_code,
-        content=_envelope(exc.code, exc.message, exc.details, correlation_id),
-    )
+    """Expected, user-facing failures raised by services and routers."""
+    logger.warning("AppError %s: %s [%s]", exc.code, exc.message, exc.correlation_id)
+    return JSONResponse(status_code=exc.status_code, content=exc.to_envelope())
 
 
 async def validation_error_handler(
     request: Request, exc: RequestValidationError
 ) -> JSONResponse:
+    """Pydantic rejected the request — malformed JSON, bad types, failed rules."""
     correlation_id = str(uuid.uuid4())
     # Each error dict can carry a raw exception object under "ctx" (e.g. the
     # ValueError raised by a field_validator) — not JSON serialisable as-is.
@@ -217,17 +223,28 @@ async def validation_error_handler(
 async def http_exception_handler(
     request: Request, exc: StarletteHTTPException
 ) -> JSONResponse:
+    """Framework-raised failures, including the 405 on DELETE /journal-entries."""
     correlation_id = str(uuid.uuid4())
     logger.warning(
         "HTTPException %s: %s [%s]", exc.status_code, exc.detail, correlation_id
     )
     return JSONResponse(
         status_code=exc.status_code,
-        content=_envelope("HTTP_ERROR", str(exc.detail), None, correlation_id),
+        content=_envelope(
+            _HTTP_STATUS_CODES.get(exc.status_code, "HTTP_ERROR"),
+            str(exc.detail),
+            None,
+            correlation_id,
+        ),
     )
 
 
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Anything unforeseen. The correlation id is the only way back to the log.
+
+    The body carries no stack trace, no SQL, no file path and no table name
+    (§10.11) — the detail goes to the server log, not to the client.
+    """
     correlation_id = str(uuid.uuid4())
     logger.exception("Unhandled exception [%s]", correlation_id)
     return JSONResponse(

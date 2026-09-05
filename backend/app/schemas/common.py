@@ -1,5 +1,7 @@
 """Shared Pydantic building blocks (SPEC.md §9 conventions)."""
 
+from __future__ import annotations
+
 from decimal import Decimal
 from typing import Annotated, Generic, TypeVar
 
@@ -15,26 +17,14 @@ Money = Annotated[
     PlainSerializer(lambda v: f"{v:.2f}", return_type=str, when_used="json"),
 ]
 
-T = TypeVar("T")
-
-
-class Page(BaseModel, Generic[T]):
-    """The envelope every list endpoint returns. No unbounded arrays (§9)."""
-
-    items: list[T]
-"""Shared response shapes (SPEC.md §9 conventions)."""
-
-from __future__ import annotations
-
-from typing import Generic, TypeVar
-
-from pydantic import BaseModel
-
 ItemT = TypeVar("ItemT")
 
 
 class Page(BaseModel, Generic[ItemT]):
-    """The list_envelope shape every list endpoint returns."""
+    """The list_envelope shape every list endpoint returns.
+
+    No endpoint ever returns an unbounded array (§9).
+    """
 
     items: list[ItemT]
     total: int
