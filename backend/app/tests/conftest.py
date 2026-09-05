@@ -18,34 +18,27 @@ from decimal import Decimal
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import BigInteger, Column, String, Table, create_engine, text
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
 import app.models  # noqa: F401  — registers every model with Base.metadata
 from app.config import settings
-from app.core.enums import AccountGroup, AccountType, JournalType
+from app.core.enums import (
+    AccountGroup,
+    AccountType,
+    JournalType,
+    PartnerType,
+    UserRole,
+)
+from app.core.security import encode_token, hash_password
 from app.database import Base, get_db
 from app.main import app
 from app.models.account import Account, Journal
+from app.models.partner import Partner
+from app.models.user import User
 
 # A separate database, so a test run never touches development data.
 TEST_DB_NAME = os.getenv("TEST_DB_NAME", "urbanfurniture_test")
-
-# TEMPORARY: models/partner.py is owned by a teammate and lands in the next
-# merge. journal_entries.partner_id and journal_entry_lines.partner_id carry
-# real foreign keys to partners.id, so SQLAlchemy needs a "partners" table in
-# Base.metadata before it can emit the ledger DDL.
-#
-# The guard means this disappears by itself: once models/partner.py defines the
-# real Partner, "partners" is already in the metadata and this block is skipped.
-# Delete it at that merge.
-if "partners" not in Base.metadata.tables:
-    Table(
-        "partners",
-        Base.metadata,
-        Column("id", BigInteger, primary_key=True, autoincrement=True),
-        Column("name", String(200), nullable=False),
-    )
 
 
 def _test_database_url() -> str:
@@ -98,16 +91,77 @@ def db(engine) -> Session:
     connection.close()
 
 
+def _make_user(
+    db: Session, *, role: UserRole, login_id: str, partner_id: int | None = None
+) -> User:
+    user = User(
+        name=f"Test {role.value}",
+        login_id=login_id,
+        email=f"{login_id}@example.com",
+        password_hash=hash_password("Passw0rd!x"),
+        role=role,
+        partner_id=partner_id,
+        is_active=True,
+    )
+    db.add(user)
+    db.flush()
+    return user
+
+
 @pytest.fixture()
-def client(db: Session) -> TestClient:
-    """A TestClient whose requests share the test's transaction.
+def accountant(db: Session) -> User:
+    """The role the ledger endpoints are built for (SPEC.md §9 roles)."""
+    return _make_user(db, role=UserRole.accountant, login_id="acct01")
+
+
+@pytest.fixture()
+def client(db: Session, accountant: User) -> TestClient:
+    """A TestClient authenticated as an accountant.
 
     get_db is overridden so that a router's db.commit() commits inside the
     outer transaction this fixture opened — the router behaves exactly as it
     does in production, and the fixture's rollback still undoes everything.
+
+    Auth is NOT overridden. The client carries a real signed JWT and every
+    request goes through get_current_user and require_role exactly as a
+    browser's would, so the tests exercise the actual authorisation path
+    rather than a stub of it (§12.2).
     """
     app.dependency_overrides[get_db] = lambda: db
+    token = encode_token(
+        user_id=accountant.id, role=accountant.role.value, partner_id=None
+    )
+    with TestClient(app, headers={"Authorization": f"Bearer {token}"}) as test_client:
+        yield test_client
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture()
+def anonymous_client(db: Session) -> TestClient:
+    """A TestClient with no credentials at all."""
+    app.dependency_overrides[get_db] = lambda: db
     with TestClient(app) as test_client:
+        yield test_client
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture()
+def contact_client(db: Session) -> TestClient:
+    """A TestClient authenticated as a portal (contact) user.
+
+    §9's role table gives a contact read access to its own invoices and bills
+    and nothing else, so the ledger endpoints must refuse it.
+    """
+    partner = Partner(name="Portal Co", partner_type=PartnerType.customer)
+    db.add(partner)
+    db.flush()
+    user = _make_user(
+        db, role=UserRole.contact, login_id="portal01", partner_id=partner.id
+    )
+
+    app.dependency_overrides[get_db] = lambda: db
+    token = encode_token(user_id=user.id, role=user.role.value, partner_id=partner.id)
+    with TestClient(app, headers={"Authorization": f"Bearer {token}"}) as test_client:
         yield test_client
     app.dependency_overrides.clear()
 
@@ -165,9 +219,9 @@ def ledger(db: Session) -> dict:
     db.add(bank_journal)
     db.flush()
 
-    partner_id = db.execute(
-        text("INSERT INTO partners (name) VALUES ('Mr Rahul') RETURNING id")
-    ).scalar_one()
+    partner = Partner(name="Mr Rahul", partner_type=PartnerType.customer)
+    db.add(partner)
+    db.flush()
 
     return {
         "debtors": debtors,
@@ -177,6 +231,6 @@ def ledger(db: Session) -> dict:
         "other_expense": other_expense,
         "archived": archived,
         "journal": bank_journal,
-        "partner_id": partner_id,
+        "partner_id": partner.id,
         "ten_thousand": Decimal("10000.00"),
     }

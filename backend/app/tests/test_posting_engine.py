@@ -637,3 +637,72 @@ def test_missing_journal_entry_returns_404_not_500(client, ledger):
 
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "NOT_FOUND"
+
+
+# --- Authorisation is enforced in the route dependency (SPEC.md §12.2) ------
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("get", "/api/journal-entries"),
+        ("get", "/api/journal-entries/1"),
+        ("post", "/api/journal-entries"),
+        ("get", "/api/accounts"),
+        ("get", "/api/accounts/1"),
+        ("post", "/api/accounts"),
+        ("put", "/api/accounts/1"),
+        ("post", "/api/accounts/1/archive"),
+        ("get", "/api/journals"),
+        ("post", "/api/journals"),
+    ],
+)
+def test_every_ledger_route_requires_authentication(anonymous_client, method, path):
+    """No ledger route is reachable without a token — all ten of them."""
+    response = anonymous_client.request(method, path, json={})
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "TOKEN_INVALID"
+
+
+def test_contact_role_cannot_read_the_ledger(contact_client, ledger):
+    """A portal user gets the ledger endpoints refused, not filtered (§9)."""
+    response = contact_client.get("/api/journal-entries")
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "INSUFFICIENT_ROLE"
+
+
+def test_contact_role_cannot_post_a_journal_entry(contact_client, ledger):
+    response = contact_client.post(
+        "/api/journal-entries",
+        json={
+            "entry_date": "2026-02-01",
+            "journal_id": ledger["journal"].id,
+            "lines": [
+                {"account_id": ledger["debtors"].id, "debit": "100.00"},
+                {"account_id": ledger["bank"].id, "credit": "100.00"},
+            ],
+        },
+    )
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "INSUFFICIENT_ROLE"
+
+
+def test_accountant_can_post_a_journal_entry(client, ledger):
+    """The role the ledger is built for still works end to end."""
+    response = client.post(
+        "/api/journal-entries",
+        json={
+            "entry_date": "2026-02-01",
+            "journal_id": ledger["journal"].id,
+            "lines": [
+                {"account_id": ledger["debtors"].id, "debit": "100.00"},
+                {"account_id": ledger["bank"].id, "credit": "100.00"},
+            ],
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["state"] == "posted"

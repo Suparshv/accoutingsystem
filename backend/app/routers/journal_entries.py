@@ -10,11 +10,13 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import BigInteger, Column, MetaData, String, Table, func, select
 from sqlalchemy.orm import Session
 
+from app.core.deps import require_role
 from app.core.enums import JournalEntryState
 from app.core.errors import NotFoundError
 from app.database import get_db
 from app.models.account import Account, Journal
 from app.models.journal_entry import JournalEntry
+from app.models.user import User
 from app.schemas.common import Page
 from app.schemas.journal_entry import (
     JournalEntryCreate,
@@ -45,6 +47,7 @@ def list_journal_entries(
     page_size: int = Query(20, ge=1, le=100),
     search: str | None = None,
     state: JournalEntryState | None = None,
+    current_user: User = Depends(require_role("admin", "accountant")),
 ) -> Page[JournalEntryListRow]:
     """Exactly the columns in the mockup's Journal Entries list view.
 
@@ -97,7 +100,11 @@ def list_journal_entries(
 
 
 @router.get("/{entry_id}", response_model=JournalEntryRead)
-def get_journal_entry(entry_id: int, db: Session = Depends(get_db)) -> JournalEntryRead:
+def get_journal_entry(
+    entry_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("admin", "accountant")),
+) -> JournalEntryRead:
     """Header plus lines, with account_name and partner_name resolved."""
     entry = db.get(JournalEntry, entry_id)
     if entry is None:
@@ -107,7 +114,9 @@ def get_journal_entry(entry_id: int, db: Session = Depends(get_db)) -> JournalEn
 
 @router.post("", response_model=JournalEntryRead, status_code=status.HTTP_201_CREATED)
 def create_journal_entry(
-    payload: JournalEntryCreate, db: Session = Depends(get_db)
+    payload: JournalEntryCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("admin", "accountant")),
 ) -> JournalEntryRead:
     """Post a manual journal entry.
 

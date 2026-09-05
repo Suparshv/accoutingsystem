@@ -4,10 +4,12 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.deps import require_role
 from app.core.enums import JournalType
 from app.core.errors import NotFoundError
 from app.database import get_db
 from app.models.account import Account, Journal
+from app.models.user import User
 from app.schemas.account import JournalCreate, JournalRead
 from app.schemas.common import Page
 
@@ -21,6 +23,7 @@ def list_journals(
     page_size: int = Query(20, ge=1, le=100),
     search: str | None = None,
     journal_type: JournalType | None = None,
+    current_user: User = Depends(require_role("admin", "accountant")),
 ) -> Page[JournalRead]:
     stmt = select(Journal)
     if journal_type is not None:
@@ -44,7 +47,9 @@ def list_journals(
 
 @router.post("", response_model=JournalRead, status_code=status.HTTP_201_CREATED)
 def create_journal(
-    payload: JournalCreate, db: Session = Depends(get_db)
+    payload: JournalCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("admin", "accountant")),
 ) -> JournalRead:
     """The default account must exist — every FK is verified before write (§11)."""
     if db.get(Account, payload.default_account_id) is None:
