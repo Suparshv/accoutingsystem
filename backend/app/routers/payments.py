@@ -15,6 +15,8 @@ from app.core.pagination import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, paginate
 from app.database import get_db
 from app.models.partner import Partner
 from app.models.payment import Payment
+from app.models.purchase import VendorBill
+from app.models.sales import CustomerInvoice
 from app.models.user import User
 from app.schemas.common import Page
 from app.schemas.payment import PaymentCreate, PaymentOut
@@ -23,6 +25,48 @@ from app.services import payments as payments_service
 router = APIRouter(prefix="/payments", tags=["payments"])
 
 LEDGER_ROLES = ("admin", "accountant")
+# A contact may create and confirm a payment against their OWN document —
+# §9 roles: "contact: ... create payments against them" — but never list or
+# read arbitrary payments, which stays LEDGER_ROLES-only.
+CREATE_ROLES = ("admin", "accountant", "contact")
+
+
+def _assert_contact_owns_target(
+    db: Session,
+    current_user: User,
+    *,
+    partner_id: int,
+    invoice_id: int | None,
+    bill_id: int | None,
+) -> None:
+    """A contact may only ever pay their OWN document (§10.10, §12.2).
+
+    Every id here — partner_id, invoice_id, bill_id — comes from the request
+    body, so none of it is trusted: each is checked against the document
+    actually stored, not against what the client claims (R6).
+    """
+    if partner_id != current_user.partner_id:
+        raise AppError(
+            403,
+            "INSUFFICIENT_ROLE",
+            "You do not have permission to register this payment.",
+        )
+    if invoice_id is not None:
+        invoice = db.get(CustomerInvoice, invoice_id)
+        if invoice is None or invoice.customer_id != current_user.partner_id:
+            raise AppError(
+                403,
+                "INSUFFICIENT_ROLE",
+                "You do not have permission to pay this invoice.",
+            )
+    if bill_id is not None:
+        bill = db.get(VendorBill, bill_id)
+        if bill is None or bill.vendor_id != current_user.partner_id:
+            raise AppError(
+                403,
+                "INSUFFICIENT_ROLE",
+                "You do not have permission to pay this bill.",
+            )
 
 
 @router.get("", response_model=Page[PaymentOut])
@@ -69,15 +113,25 @@ def get_payment(
 def create_payment(
     payload: PaymentCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role(*LEDGER_ROLES)),
+    current_user: User = Depends(require_role(*CREATE_ROLES)),
 ) -> PaymentOut:
     """Register a DRAFT payment. No ledger effect until confirmed (§10.6).
 
     Every §9 validation runs in the service: direction, journal type, target
-    state, and the overpayment check.
+    state, and the overpayment check. A contact may only register a payment
+    against their own document (§9 roles, §10.10) — admin/accountant are
+    unrestricted.
     """
     if db.get(Partner, payload.partner_id) is None:
         raise AppError(404, "NOT_FOUND", "Partner not found.")
+    if current_user.role.value == "contact":
+        _assert_contact_owns_target(
+            db,
+            current_user,
+            partner_id=payload.partner_id,
+            invoice_id=payload.invoice_id,
+            bill_id=payload.bill_id,
+        )
 
     payment = payments_service.register_payment(
         db,
@@ -99,10 +153,24 @@ def create_payment(
 def confirm_payment(
     payment_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role(*LEDGER_ROLES)),
+    current_user: User = Depends(require_role(*CREATE_ROLES)),
 ) -> PaymentOut:
-    """★ Atomic: the payment's state change and its journal entry, or neither."""
+    """★ Atomic: the payment's state change and its journal entry, or neither.
+
+    A contact may only confirm their OWN payment — re-checked here, not only
+    at registration, because the payment id is a path parameter a contact
+    could otherwise enumerate to confirm someone else's draft (§12.2).
+    """
     payment = _get_or_404(db, payment_id)
+    if (
+        current_user.role.value == "contact"
+        and payment.partner_id != current_user.partner_id
+    ):
+        raise AppError(
+            403,
+            "INSUFFICIENT_ROLE",
+            "You do not have permission to confirm this payment.",
+        )
     payments_service.confirm_payment(db, payment)
     db.commit()
     db.refresh(payment)

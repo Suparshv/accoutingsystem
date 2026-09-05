@@ -511,6 +511,9 @@ def test_contact_can_read_own_invoice_by_id(
 def test_contact_cannot_pay_another_partners_invoice(
     client, rahul_contact_client, ledger, product, db
 ):
+    """A contact registers payments through the same POST /payments every
+    role uses (routers/payments.py), not a portal-specific endpoint — the
+    ownership check lives there (§10.10, §12.2)."""
     other_partner = Partner(name="Joey Wills")
     db.add(other_partner)
     db.flush()
@@ -529,7 +532,17 @@ def test_contact_cannot_pay_another_partners_invoice(
         },
     ).json()
 
-    response = rahul_contact_client.post(f"/api/portal/pay/{joey_invoice['id']}")
+    response = rahul_contact_client.post(
+        "/api/payments",
+        json={
+            "payment_type": "receive",
+            "partner_id": ledger["partner_id"],
+            "journal_id": ledger["journal"].id,
+            "amount": "500.00",
+            "payment_date": "2026-02-01",
+            "invoice_id": joey_invoice["id"],
+        },
+    )
 
     assert response.status_code == 403
 

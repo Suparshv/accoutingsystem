@@ -27,6 +27,15 @@ class SalesOrderCreate(BaseModel):
     lines: list[SalesOrderLineCreate]
 
 
+class SalesOrderUpdate(BaseModel):
+    """PUT body. Draft-only (enforced in the router) — omitted fields are
+    left unchanged; `lines`, when given, replaces the whole line set."""
+
+    customer_id: int | None = None
+    order_date: date | None = None
+    lines: list[SalesOrderLineCreate] | None = None
+
+
 class SalesOrderLineRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -85,6 +94,27 @@ class CustomerInvoiceCreate(BaseModel):
 
     @model_validator(mode="after")
     def _check_due_date(self) -> CustomerInvoiceCreate:
+        if (
+            self.due_date is not None
+            and self.invoice_date is not None
+            and self.due_date < self.invoice_date
+        ):
+            raise ValueError("due_date must be on or after invoice_date")
+        return self
+
+
+class CustomerInvoiceUpdate(BaseModel):
+    """PUT body. Draft-only (enforced in the router) — omitted fields are
+    left unchanged; `lines`, when given, replaces the whole line set."""
+
+    customer_id: int | None = None
+    invoice_reference: str | None = Field(default=None, max_length=60)
+    invoice_date: date | None = None
+    due_date: date | None = None
+    lines: list[CustomerInvoiceLineCreate] | None = None
+
+    @model_validator(mode="after")
+    def _check_due_date(self) -> CustomerInvoiceUpdate:
         if (
             self.due_date is not None
             and self.invoice_date is not None

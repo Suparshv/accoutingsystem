@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import date
-from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import select
@@ -11,21 +10,29 @@ from sqlalchemy.orm import Session
 
 from app.core.deps import require_role
 from app.core.enums import DocumentState, PaymentStatus
-from app.core.errors import NotFoundError
+from app.core.errors import AppError, NotFoundError
 from app.core.pagination import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, paginate
 from app.database import get_db
-from app.models.sales import CustomerInvoice, SalesOrder
+from app.models.analytic import AnalyticAccount
+from app.models.partner import Partner
+from app.models.product import Product
+from app.models.sales import CustomerInvoice, SalesOrder, SalesOrderLine
 from app.models.user import User
 from app.schemas.common import Page
 from app.schemas.sales import (
     CustomerInvoiceRead,
     SalesOrderCreate,
+    SalesOrderLineCreate,
     SalesOrderListRow,
     SalesOrderRead,
+    SalesOrderUpdate,
 )
+from app.services import payments as payments_service
 from app.services import sales as sales_service
 
 router = APIRouter(prefix="/sales-orders", tags=["sales-orders"])
+
+LEDGER_ROLES = ("admin", "accountant")
 
 
 def _get_or_404(db: Session, sales_order_id: int) -> SalesOrder:
@@ -35,22 +42,54 @@ def _get_or_404(db: Session, sales_order_id: int) -> SalesOrder:
     return so
 
 
-def _to_invoice_read(invoice: CustomerInvoice) -> CustomerInvoiceRead:
+def _assert_partner(db: Session, customer_id: int) -> None:
+    partner = db.get(Partner, customer_id)
+    if partner is None or not partner.is_active:
+        raise AppError(404, "NOT_FOUND", "Customer not found.")
+
+
+def _replace_lines(
+    db: Session, so: SalesOrder, lines: list[SalesOrderLineCreate]
+) -> None:
+    """Rebuild the line set, recomputing every total server-side (R6) —
+    mirrors routers/purchase_orders.py's _replace_lines exactly."""
+    so.lines.clear()
+    for index, line in enumerate(lines):
+        if db.get(Product, line.product_id) is None:
+            raise AppError(404, "NOT_FOUND", f"Product {line.product_id} not found.")
+        if (
+            line.analytic_account_id is not None
+            and db.get(AnalyticAccount, line.analytic_account_id) is None
+        ):
+            raise AppError(404, "NOT_FOUND", "Analytic account not found.")
+
+        so.lines.append(
+            SalesOrderLine(
+                product_id=line.product_id,
+                analytic_account_id=line.analytic_account_id,
+                quantity=line.quantity,
+                unit_price=line.unit_price,
+                line_total=sales_service.compute_line_total(
+                    line.quantity, line.unit_price
+                ),
+                sequence=(index + 1) * 10,
+            )
+        )
+    so.total_amount = sales_service.recompute_total(so.lines)
+
+
+def _to_invoice_read(db: Session, invoice: CustomerInvoice) -> CustomerInvoiceRead:
     """Attach the derived, never-stored payment fields (§7.7, P5).
 
     Duplicated in routers/customer_invoices.py rather than shared, because a
-    router must never import another router (AGENTS.md §3) and this is a few
-    lines of pure shaping, not business logic — compute_payment_status
-    itself lives once, in services/sales.py.
+    router must never import another router (AGENTS.md §3) — the real
+    computation lives once, in services/payments.py.
     """
-    amount_paid = Decimal("0.00")
-    amount_due, status_value = sales_service.compute_payment_status(
-        invoice.total_amount, amount_paid
-    )
+    summary = payments_service.invoice_payment_summary(db, invoice.id)
     read = CustomerInvoiceRead.model_validate(invoice)
-    read.amount_paid = amount_paid
-    read.amount_due = amount_due
-    read.payment_status = PaymentStatus(status_value)
+    read.amount_paid = summary.amount_paid
+    read.amount_due = summary.amount_due
+    read.payment_status = PaymentStatus(summary.payment_status)
     return read
 
 
@@ -61,7 +100,7 @@ def list_sales_orders(
     search: str | None = None,
     state: DocumentState | None = None,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role("admin", "accountant")),
+    current_user: User = Depends(require_role(*LEDGER_ROLES)),
 ) -> Page[SalesOrderListRow]:
     stmt = select(SalesOrder)
     if state is not None:
@@ -83,7 +122,7 @@ def list_sales_orders(
 def get_sales_order(
     sales_order_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role("admin", "accountant")),
+    current_user: User = Depends(require_role(*LEDGER_ROLES)),
 ) -> SalesOrderRead:
     return SalesOrderRead.model_validate(_get_or_404(db, sales_order_id))
 
@@ -92,8 +131,9 @@ def get_sales_order(
 def create_sales_order(
     payload: SalesOrderCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role("admin", "accountant")),
+    current_user: User = Depends(require_role(*LEDGER_ROLES)),
 ) -> SalesOrderRead:
+    _assert_partner(db, payload.customer_id)
     so = sales_service.create_sales_order(
         db,
         customer_id=payload.customer_id,
@@ -105,14 +145,56 @@ def create_sales_order(
     return SalesOrderRead.model_validate(so)
 
 
+@router.put("/{sales_order_id}", response_model=SalesOrderRead)
+def update_sales_order(
+    sales_order_id: int,
+    payload: SalesOrderUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(*LEDGER_ROLES)),
+) -> SalesOrderRead:
+    """Draft only. A confirmed order's lines cannot change."""
+    so = _get_or_404(db, sales_order_id)
+    if so.state is not DocumentState.DRAFT:
+        raise AppError(
+            409,
+            "INVALID_STATE_TRANSITION",
+            "Only a draft sales order can be edited.",
+        )
+
+    if payload.customer_id is not None:
+        _assert_partner(db, payload.customer_id)
+        so.customer_id = payload.customer_id
+    if payload.order_date is not None:
+        so.order_date = payload.order_date
+    if payload.lines is not None:
+        _replace_lines(db, so, payload.lines)
+
+    db.commit()
+    db.refresh(so)
+    return SalesOrderRead.model_validate(so)
+
+
 @router.post("/{sales_order_id}/confirm", response_model=SalesOrderRead)
 def confirm_sales_order(
     sales_order_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role("admin", "accountant")),
+    current_user: User = Depends(require_role(*LEDGER_ROLES)),
 ) -> SalesOrderRead:
     """State change only — a sales order produces NO journal entry (§7.7)."""
     so = sales_service.confirm_sales_order(db, sales_order_id=sales_order_id)
+    db.commit()
+    db.refresh(so)
+    return SalesOrderRead.model_validate(so)
+
+
+@router.post("/{sales_order_id}/cancel", response_model=SalesOrderRead)
+def cancel_sales_order(
+    sales_order_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(*LEDGER_ROLES)),
+) -> SalesOrderRead:
+    so = _get_or_404(db, sales_order_id)
+    sales_service.cancel_sales_order(db, so)
     db.commit()
     db.refresh(so)
     return SalesOrderRead.model_validate(so)
@@ -126,11 +208,11 @@ def confirm_sales_order(
 def create_invoice_from_sales_order(
     sales_order_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role("admin", "accountant")),
+    current_user: User = Depends(require_role(*LEDGER_ROLES)),
 ) -> CustomerInvoiceRead:
     """Copies vendor/lines/analytics/qty/price into a draft invoice (§10.5's
     create-bill behaviour, mirrored on the sales side)."""
     invoice = sales_service.create_invoice_from_so(db, sales_order_id=sales_order_id)
     db.commit()
     db.refresh(invoice)
-    return _to_invoice_read(invoice)
+    return _to_invoice_read(db, invoice)

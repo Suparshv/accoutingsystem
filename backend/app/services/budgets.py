@@ -133,6 +133,44 @@ def achievement_or_none(db: Session, line: BudgetLine) -> Achievement | None:
     return compute_achievement(db, line)
 
 
+def budget_summary(db: Session) -> list[dict]:
+    """Committed vs achieved per BUDGET, summed across its lines — the
+    figures the budget pie chart shows (§9 reports.budget-summary).
+
+    Only confirmed/revised budgets are included; a draft budget's
+    achievement is not yet meaningful (§7.9).
+    """
+    budgets = (
+        db.execute(select(Budget).where(Budget.state.in_(ACHIEVEMENT_VISIBLE_STATES)))
+        .scalars()
+        .all()
+    )
+
+    rows = []
+    for budget in budgets:
+        committed = sum((line.committed_amount for line in budget.lines), ZERO)
+        achieved = sum(
+            (compute_achievement(db, line).achieved_amount for line in budget.lines),
+            ZERO,
+        )
+        if committed == ZERO:
+            percent = ZERO
+        else:
+            percent = (achieved / committed * Decimal("100")).quantize(
+                Decimal("0.01"), rounding=ROUND_HALF_UP
+            )
+        rows.append(
+            {
+                "budget_id": budget.id,
+                "budget_name": budget.name,
+                "committed_amount": committed,
+                "achieved_amount": achieved,
+                "achieved_percent": percent,
+            }
+        )
+    return rows
+
+
 def list_source_documents(db: Session, line: BudgetLine) -> list[dict]:
     """The documents behind one line's achieved amount.
 

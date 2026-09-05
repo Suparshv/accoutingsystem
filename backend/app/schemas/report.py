@@ -50,3 +50,13 @@ class TrialBalanceRead(BaseModel):
     grand_total_debit: Money
     grand_total_credit: Money
     is_balanced: bool
+
+
+class BudgetSummaryRow(BaseModel):
+    """One row per confirmed/revised budget, for the budget pie chart."""
+
+    budget_id: int
+    budget_name: str
+    committed_amount: Money
+    achieved_amount: Money
+    achieved_percent: Money

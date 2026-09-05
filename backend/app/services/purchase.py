@@ -127,12 +127,19 @@ def cancel_purchase_order(db: Session, order: PurchaseOrder) -> PurchaseOrder:
     return order
 
 
-def create_bill_from_po(db: Session, order: PurchaseOrder) -> VendorBill:
+def create_bill_from_po(
+    db: Session, order: PurchaseOrder, *, bill_date: date | None = None
+) -> VendorBill:
     """Copy a confirmed PO into a fresh draft bill (§9, §10.5).
 
     Vendor, quantities, prices and analytic tags come across unchanged. The
     ledger account does not exist on a PO line, so each bill line is prefilled
     with Purchase Expense A/c, which the user may override before confirming.
+
+    ``bill_date`` defaults to today, matching real usage (you convert a PO to
+    a bill on the day you receive it, regardless of when it was placed).
+    seed.py passes an explicit historical date so demo bills land inside the
+    Jan-Mar 2026 window its budgets measure achievement against.
     """
     if order.state is not DocumentState.CONFIRMED:
         raise AppError(
@@ -158,7 +165,7 @@ def create_bill_from_po(db: Session, order: PurchaseOrder) -> VendorBill:
     bill = VendorBill(
         number=next_vendor_bill_number(db),
         vendor_id=order.vendor_id,
-        bill_date=date.today(),
+        bill_date=bill_date or date.today(),
         state=DocumentState.DRAFT,
         source_po_id=order.id,
     )

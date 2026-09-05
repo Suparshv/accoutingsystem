@@ -8,13 +8,15 @@ stores a balance, every report is an aggregation over journal entries.
 
 from __future__ import annotations
 
+from calendar import monthrange
 from datetime import date
 from decimal import Decimal
 
-from sqlalchemy import extract, func, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.enums import AccountType, JournalEntryState
+from app.core.errors import AppError
 from app.models.account import Account
 from app.models.journal_entry import JournalEntry, JournalEntryLine
 
@@ -38,10 +40,11 @@ BALANCE_SHEET_LIABILITY_TYPES: dict[AccountType, str] = {
 
 
 def _aggregate_by_account_type(
-    db: Session, *, year: int, as_of: date | None
+    db: Session, *, start_date: date, end_date: date
 ) -> dict[AccountType, tuple[Decimal, Decimal]]:
     """SUM(debit), SUM(credit) grouped by account_type, over posted lines
-    only (§6.4 scope). One query, not one per account_type."""
+    only (§6.4 scope), within an inclusive date range. One query, not one
+    per account_type."""
     stmt = (
         select(
             Account.account_type,
@@ -52,26 +55,92 @@ def _aggregate_by_account_type(
         .join(JournalEntry, JournalEntry.id == JournalEntryLine.journal_entry_id)
         .join(Account, Account.id == JournalEntryLine.account_id)
         .where(JournalEntry.state == JournalEntryState.POSTED)
-        .where(extract("year", JournalEntry.entry_date) == year)
+        .where(JournalEntry.entry_date >= start_date)
+        .where(JournalEntry.entry_date <= end_date)
         .group_by(Account.account_type)
     )
-    if as_of is not None:
-        stmt = stmt.where(JournalEntry.entry_date <= as_of)
 
     rows = db.execute(stmt).all()
     return {row[0]: (Decimal(row[1]), Decimal(row[2])) for row in rows}
 
 
-def profit_and_loss(db: Session, *, year: int, as_of: date | None = None) -> dict:
-    """Income and expenses for one fiscal year (§6.4, §9).
+def _last_day_of_month(year: int, month: int) -> date:
+    return date(year, month, monthrange(year, month)[1])
 
-    `as_of` is not part of the public /reports/profit-and-loss contract (§9
-    only takes `year`) but balance_sheet() below reuses this function with
-    an `as_of` cutoff to compute the period's retained earnings as of a
-    point in time rather than for the whole year.
+
+def resolve_period(
+    *,
+    year: int | None = None,
+    month: int | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
+) -> tuple[date, date]:
+    """Turn the /reports/profit-and-loss query params into one inclusive
+    date range (§9).
+
+    Precedence, most specific first:
+      1. start_date + end_date — an explicit range, used as given.
+      2. month (+ optional year, defaulting to the current year) — that
+         single calendar month.
+      3. year alone (or nothing) — the whole fiscal year, defaulting to the
+         current year. This is the original, backward-compatible behaviour.
     """
-    totals = _aggregate_by_account_type(db, year=year, as_of=as_of)
+    if start_date is not None or end_date is not None:
+        if start_date is None or end_date is None:
+            raise AppError(
+                422,
+                "VALIDATION_ERROR",
+                "start_date and end_date must both be supplied together.",
+            )
+        if end_date < start_date:
+            raise AppError(
+                422,
+                "VALIDATION_ERROR",
+                "end_date must not be before start_date.",
+            )
+        return start_date, end_date
 
+    resolved_year = year or date.today().year
+
+    if month is not None:
+        if not 1 <= month <= 12:
+            raise AppError(422, "VALIDATION_ERROR", "month must be between 1 and 12.")
+        return date(resolved_year, month, 1), _last_day_of_month(resolved_year, month)
+
+    return date(resolved_year, 1, 1), date(resolved_year, 12, 31)
+
+
+def profit_and_loss(
+    db: Session,
+    *,
+    year: int | None = None,
+    month: int | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
+) -> dict:
+    """Income and expenses for a period (§6.4, §9).
+
+    Defaults to the full fiscal year (`year`, itself defaulting to the
+    current year) for backward compatibility. Pass `month` (optionally with
+    `year`) for one calendar month, or `start_date`/`end_date` together for
+    an arbitrary range — see resolve_period() for the exact precedence.
+    """
+    period_start, period_end = resolve_period(
+        year=year, month=month, start_date=start_date, end_date=end_date
+    )
+    totals = _aggregate_by_account_type(
+        db, start_date=period_start, end_date=period_end
+    )
+    return _pnl_from_totals(totals)
+
+
+def _pnl_from_totals(totals: dict[AccountType, tuple[Decimal, Decimal]]) -> dict:
+    """The income/expenses/net_income shape, given totals already aggregated
+    over whatever date range the caller wants (§6.4). Shared by
+    profit_and_loss() and balance_sheet(), so the latter never re-queries
+    the ledger just to get the net-income figure it already has the totals
+    for.
+    """
     income_debit, income_credit = totals.get(AccountType.INCOME, (ZERO, ZERO))
     income_from_sales = income_credit - income_debit
     total_income = income_from_sales
@@ -109,7 +178,16 @@ def balance_sheet(db: Session, *, year: int, as_of: date | None = None) -> dict:
     one piece of accounting the mockup does not spell out, and the detail
     this whole function exists to get right.
     """
-    totals = _aggregate_by_account_type(db, year=year, as_of=as_of)
+    # Same calendar-year scope profit_and_loss's year mode uses, capped at
+    # `as_of` when it falls inside the year (preserves the exact pre-existing
+    # "this year, up to a cutoff" semantics now that the shared aggregate
+    # takes a plain date range instead of a year+as_of pair).
+    period_end = date(year, 12, 31)
+    if as_of is not None and as_of < period_end:
+        period_end = as_of
+    totals = _aggregate_by_account_type(
+        db, start_date=date(year, 1, 1), end_date=period_end
+    )
 
     assets = []
     total_assets = ZERO
@@ -131,7 +209,7 @@ def balance_sheet(db: Session, *, year: int, as_of: date | None = None) -> dict:
         )
         total_liabilities += balance
 
-    net_income = profit_and_loss(db, year=year, as_of=as_of)["net_income"]
+    net_income = _pnl_from_totals(totals)["net_income"]
     liabilities.append(
         {
             "label": "Current Period Earnings",

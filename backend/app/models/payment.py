@@ -7,10 +7,6 @@ two tables would duplicate every column and every query.
 A payment has no ledger effect until it is confirmed. While draft it is a
 record of intent — the target document's amount_due is unchanged and it does
 not appear in the trial balance (§10.6).
-
-NOTE FOR THE MERGE: ``invoice_id`` is deliberately declared WITHOUT its
-foreign key for now. See the comment on the column — the FK is specified by
-§7.8 and must be restored once models/sales.py lands.
 """
 
 from __future__ import annotations
@@ -79,16 +75,11 @@ class Payment(Base, TimestampedBase):
         server_default=PaymentState.DRAFT.value,
     )
 
-    # RESTORE THE FOREIGN KEY AT THE SALES MERGE:
-    #     ForeignKey("customer_invoices.id", ondelete="RESTRICT")
-    # §7.8 specifies it, and it belongs here. It is left off for now because
-    # SQLAlchemy resolves foreign keys on every flush, not only at create_all
-    # — so declaring it against a table models/sales.py has not defined yet
-    # makes EVERY payment insert fail with NoReferencedTableError, not just
-    # schema creation. The two CHECK constraints below still guarantee that a
-    # payment targets exactly one document and in the right direction; only
-    # referential integrity on this column is missing until the merge.
-    invoice_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    invoice_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("customer_invoices.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
     bill_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("vendor_bills.id", ondelete="RESTRICT"), nullable=True
     )

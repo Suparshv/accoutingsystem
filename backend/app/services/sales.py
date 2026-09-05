@@ -135,12 +135,13 @@ def _get_sales_journal_default_account_id(db: Session) -> int:
 # --- line/total helpers -------------------------------------------------
 
 
-def _line_total(quantity: Decimal, unit_price: Decimal) -> Decimal:
+def compute_line_total(quantity: Decimal, unit_price: Decimal) -> Decimal:
     """quantity * unit_price, rounded to the money precision (R6, §11)."""
     return (quantity * unit_price).quantize(Decimal("0.01"))
 
 
-def _sum_totals(lines: list) -> Decimal:
+def recompute_total(lines: list) -> Decimal:
+    """A document's total is the sum of its lines. Never client-supplied."""
     return sum((line.line_total for line in lines), ZERO)
 
 
@@ -168,11 +169,11 @@ def create_sales_order(
                 analytic_account_id=line.get("analytic_account_id"),
                 quantity=quantity,
                 unit_price=unit_price,
-                line_total=_line_total(quantity, unit_price),
+                line_total=compute_line_total(quantity, unit_price),
                 sequence=(index + 1) * 10,
             )
         )
-    so.total_amount = _sum_totals(so.lines)
+    so.total_amount = recompute_total(so.lines)
     db.add(so)
     db.flush()
     return so
@@ -203,9 +204,16 @@ def confirm_sales_order(db: Session, *, sales_order_id: int) -> SalesOrder:
     return so
 
 
-def create_invoice_from_so(db: Session, *, sales_order_id: int) -> CustomerInvoice:
+def create_invoice_from_so(
+    db: Session, *, sales_order_id: int, invoice_date: date | None = None
+) -> CustomerInvoice:
     """Copy vendor/lines/analytics/qty/price from a confirmed SO into a draft
     invoice, mirroring §10.5's create-bill behaviour on the sales side.
+
+    ``invoice_date`` defaults to today, matching real usage (you invoice on
+    the day you raise the invoice, regardless of when the order was placed).
+    seed.py passes an explicit historical date so demo invoices land inside
+    the period any income-side budget measures achievement against.
 
     Raises:
         NotFoundError: no such sales order.
@@ -234,7 +242,7 @@ def create_invoice_from_so(db: Session, *, sales_order_id: int) -> CustomerInvoi
     invoice = CustomerInvoice(
         number=_next_customer_invoice_number(db),
         customer_id=so.customer_id,
-        invoice_date=date.today(),
+        invoice_date=invoice_date or date.today(),
         state=DocumentState.DRAFT,
         source_so_id=so.id,
     )
@@ -250,7 +258,7 @@ def create_invoice_from_so(db: Session, *, sales_order_id: int) -> CustomerInvoi
                 sequence=line.sequence,
             )
         )
-    invoice.total_amount = _sum_totals(invoice.lines)
+    invoice.total_amount = recompute_total(invoice.lines)
     db.add(invoice)
     db.flush()
     return invoice
@@ -288,11 +296,11 @@ def create_customer_invoice(
                 analytic_account_id=line.get("analytic_account_id"),
                 quantity=quantity,
                 unit_price=unit_price,
-                line_total=_line_total(quantity, unit_price),
+                line_total=compute_line_total(quantity, unit_price),
                 sequence=(index + 1) * 10,
             )
         )
-    invoice.total_amount = _sum_totals(invoice.lines)
+    invoice.total_amount = recompute_total(invoice.lines)
     db.add(invoice)
     db.flush()
     return invoice
@@ -366,22 +374,28 @@ def confirm_customer_invoice(
     return invoice, entry
 
 
-def compute_payment_status(
-    total_amount: Decimal, amount_paid: Decimal
-) -> tuple[Decimal, str]:
-    """amount_due and payment_status, derived — never stored (§7.7, P5).
+def cancel_sales_order(db: Session, so: SalesOrder) -> SalesOrder:
+    """A sales order has no ledger effect in any state, so cancelling one is
+    always safe — mirrors services.purchase.cancel_purchase_order exactly."""
+    so.state = DocumentState.CANCELLED
+    db.flush()
+    return so
 
-    No payments module exists yet in this tree, so every caller currently
-    passes amount_paid=0 and always gets "not_paid" back. This function is
-    written against the exact derivation rule in §7.7 so that wiring in a
-    real amount_paid query (SUM(payments.amount) WHERE state='confirmed'),
-    once the payments module lands, requires no change here.
+
+def cancel_customer_invoice(db: Session, invoice: CustomerInvoice) -> CustomerInvoice:
+    """Only a draft invoice may be cancelled.
+
+    A confirmed invoice has a posted journal entry, and posted entries are
+    immutable (R4) — mirrors services.purchase.cancel_vendor_bill exactly.
     """
-    amount_due = total_amount - amount_paid
-    if amount_paid <= ZERO:
-        status = "not_paid"
-    elif amount_due <= ZERO:
-        status = "paid"
-    else:
-        status = "partial"
-    return amount_due, status
+    if invoice.state is DocumentState.CONFIRMED:
+        raise AppError(
+            409,
+            "INVALID_STATE_TRANSITION",
+            "A confirmed invoice cannot be cancelled; its journal entry is "
+            "posted and immutable. Reverse the entry instead.",
+        )
+
+    invoice.state = DocumentState.CANCELLED
+    db.flush()
+    return invoice
