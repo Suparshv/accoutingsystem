@@ -1,5 +1,7 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import { AppShell } from "@/components/layout/AppShell";
+import ComponentsPreview from "@/dev/ComponentsPreview";
 
 function HomePage() {
   return (
@@ -20,6 +22,10 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<HomePage />} />
+        {/* Temporary — not part of real navigation. See ComponentsPreview.tsx. */}
+        <Route element={<AppShell />}>
+          <Route path="/dev/components" element={<ComponentsPreview />} />
+        </Route>
       </Routes>
     </BrowserRouter>
   );
