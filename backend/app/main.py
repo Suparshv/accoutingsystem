@@ -11,10 +11,14 @@ from app.routers import (
     accounts,
     analytics,
     auth,
+    budgets,
     journal_entries,
     journals,
     partners,
+    payments,
     products,
+    purchase_orders,
+    vendor_bills,
 )
 
 # Startup guard for the Python floor in SPEC.md §3 (python: ">=3.10"). Raising
@@ -52,6 +56,10 @@ app.include_router(analytics.router, prefix=API_PREFIX)
 app.include_router(accounts.router, prefix=API_PREFIX)
 app.include_router(journals.router, prefix=API_PREFIX)
 app.include_router(journal_entries.router, prefix=API_PREFIX)
+app.include_router(purchase_orders.router, prefix=API_PREFIX)
+app.include_router(vendor_bills.router, prefix=API_PREFIX)
+app.include_router(payments.router, prefix=API_PREFIX)
+app.include_router(budgets.router, prefix=API_PREFIX)
 
 
 @app.get("/api/health")

@@ -18,7 +18,16 @@ from decimal import Decimal
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, text
+from sqlalchemy import (
+    BigInteger,
+    Column,
+    Date,
+    Numeric,
+    String,
+    Table,
+    create_engine,
+    text,
+)
 from sqlalchemy.orm import Session, sessionmaker
 
 import app.models  # noqa: F401  — registers every model with Base.metadata
@@ -39,6 +48,35 @@ from app.models.user import User
 
 # A separate database, so a test run never touches development data.
 TEST_DB_NAME = os.getenv("TEST_DB_NAME", "urbanfurniture_test")
+
+
+# TEMPORARY: models/sales.py is owned by a teammate and does not exist yet.
+# payments.invoice_id carries a real FK to customer_invoices.id (§7.8), and
+# budget achievement on an income line reads customer_invoice_lines, so both
+# tables must exist in Base.metadata before create_all can emit the DDL.
+#
+# Guarded so it removes itself: once models/sales.py defines the real tables,
+# "customer_invoices" is already in the metadata and this block is skipped.
+# Delete it at that merge.
+if "customer_invoices" not in Base.metadata.tables:
+    Table(
+        "customer_invoices",
+        Base.metadata,
+        Column("id", BigInteger, primary_key=True, autoincrement=True),
+        Column("number", String(30)),
+        Column("customer_id", BigInteger),
+        Column("invoice_date", Date),
+        Column("state", String(20)),
+        Column("total_amount", Numeric(14, 2)),
+    )
+    Table(
+        "customer_invoice_lines",
+        Base.metadata,
+        Column("id", BigInteger, primary_key=True, autoincrement=True),
+        Column("customer_invoice_id", BigInteger),
+        Column("analytic_account_id", BigInteger),
+        Column("line_total", Numeric(14, 2)),
+    )
 
 
 def _test_database_url() -> str:
@@ -233,4 +271,46 @@ def ledger(db: Session) -> dict:
         "journal": bank_journal,
         "partner_id": partner.id,
         "ten_thousand": Decimal("10000.00"),
+    }
+
+
+@pytest.fixture()
+def purchase_ledger(db: Session, ledger: dict) -> dict:
+    """The purchase-cycle seed: a Purchase journal, a product, an analytic tag.
+
+    Builds on the `ledger` fixture's chart of accounts so the two suites share
+    one definition of Debtors/Creditors/Bank rather than drifting apart.
+    """
+    from app.core.enums import JournalType, ProductType
+    from app.models.account import Journal
+    from app.models.analytic import AnalyticAccount
+    from app.models.product import Product
+
+    purchase_journal = Journal(
+        name="Purchase",
+        journal_type=JournalType.PURCHASE,
+        default_account_id=ledger["purchase_expense"].id,
+    )
+    db.add(purchase_journal)
+
+    table = Product(
+        name="Table", product_type=ProductType.goods, sales_price=0, cost_price=0
+    )
+    freight = Product(
+        name="Freight", product_type=ProductType.service, sales_price=0, cost_price=0
+    )
+    db.add_all([table, freight])
+
+    project_one = AnalyticAccount(name="Project 1")
+    project_two = AnalyticAccount(name="Project 2")
+    db.add_all([project_one, project_two])
+    db.flush()
+
+    return {
+        **ledger,
+        "purchase_journal": purchase_journal,
+        "table": table,
+        "freight": freight,
+        "project_one": project_one,
+        "project_two": project_two,
     }

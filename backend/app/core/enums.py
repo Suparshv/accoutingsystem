@@ -73,6 +73,56 @@ class JournalEntryState(str, Enum):
     CANCELLED = "cancelled"
 
 
+# --- documents, payments and budgets ----------------------------------------
+
+
+class DocumentState(str, Enum):
+    """Lifecycle of a purchase order, bill, sales order or invoice."""
+
+    DRAFT = "draft"
+    CONFIRMED = "confirmed"
+    CANCELLED = "cancelled"
+
+
+class PaymentType(str, Enum):
+    """send = we pay a vendor; receive = a customer pays us."""
+
+    SEND = "send"
+    RECEIVE = "receive"
+
+
+class PaymentState(str, Enum):
+    """A payment has no ledger effect until it is confirmed."""
+
+    DRAFT = "draft"
+    CONFIRMED = "confirmed"
+    CANCELLED = "cancelled"
+
+
+class PaymentStatus(str, Enum):
+    """Derived from confirmed payments against a document. NEVER a column (R5)."""
+
+    NOT_PAID = "not_paid"
+    PARTIAL = "partial"
+    PAID = "paid"
+
+
+class BudgetState(str, Enum):
+    """A confirmed budget is revised, never edited (§10.7)."""
+
+    DRAFT = "draft"
+    CONFIRMED = "confirmed"
+    REVISED = "revised"
+    CANCELLED = "cancelled"
+
+
+class BudgetLineType(str, Enum):
+    """Income lines read customer invoices; expense lines read vendor bills."""
+
+    INCOME = "income"
+    EXPENSE = "expense"
+
+
 # The group -> allowed types mapping behind ck_accounts_group_type_consistent
 # (SPEC.md §7.4). The database CHECK constraint and the Pydantic validator are
 # both generated from this dict, so the two layers can never drift apart.
