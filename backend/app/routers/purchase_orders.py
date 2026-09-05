@@ -20,7 +20,7 @@ from app.database import get_db
 from app.models.analytic import AnalyticAccount
 from app.models.partner import Partner
 from app.models.product import Product
-from app.models.purchase import PurchaseOrder, PurchaseOrderLine
+from app.models.purchase import PurchaseOrder, PurchaseOrderLine, VendorBill
 from app.models.user import User
 from app.schemas.common import Page
 from app.schemas.purchase import (
@@ -55,7 +55,10 @@ def list_purchase_orders(
         stmt = stmt.where(PurchaseOrder.vendor_id == vendor_id)
     if search:
         stmt = stmt.where(PurchaseOrder.number.ilike(f"%{search}%"))
-    stmt = stmt.order_by(PurchaseOrder.created_at.desc())
+    # id tiebreaker: created_at alone isn't unique (rows from one bulk
+    # transaction share a timestamp), which lets LIMIT/OFFSET pagination
+    # duplicate/skip rows across pages — see sales_orders.py's list route.
+    stmt = stmt.order_by(PurchaseOrder.created_at.desc(), PurchaseOrder.id.desc())
 
     rows, total = paginate(db, stmt, page, page_size)
     names = _vendor_names(db, [r.vendor_id for r in rows])
@@ -244,6 +247,11 @@ def _vendor_names(db: Session, ids: list[int]) -> dict[int, str]:
 
 def _to_out(db: Session, order: PurchaseOrder) -> PurchaseOrderOut:
     names = _vendor_names(db, [order.vendor_id])
+    # Non-null once this order has been converted to a vendor bill — powers
+    # the "Create Bill" -> "View Bill" swap on the PO detail page (§10.5).
+    bill_id = db.execute(
+        select(VendorBill.id).where(VendorBill.source_po_id == order.id)
+    ).scalar_one_or_none()
     return PurchaseOrderOut(
         id=order.id,
         number=order.number,
@@ -252,6 +260,7 @@ def _to_out(db: Session, order: PurchaseOrder) -> PurchaseOrderOut:
         order_date=order.order_date,
         state=order.state,
         total_amount=order.total_amount,
+        bill_id=bill_id,
         lines=[
             {
                 "id": line.id,

@@ -52,7 +52,10 @@ def list_partners(
         stmt = stmt.where(Partner.name.ilike(f"%{search}%"))
     if partner_type is not None:
         stmt = stmt.where(Partner.partner_type == partner_type)
-    stmt = stmt.order_by(Partner.created_at.desc())
+    # id tiebreaker: created_at alone isn't unique (rows from one bulk
+    # transaction share a timestamp), which lets LIMIT/OFFSET pagination
+    # duplicate/skip rows across pages — see routers/sales_orders.py.
+    stmt = stmt.order_by(Partner.created_at.desc(), Partner.id.desc())
     rows, total = paginate(db, stmt, page, page_size)
     return Page(items=rows, total=total, page=page, page_size=page_size)
 

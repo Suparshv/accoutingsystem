@@ -60,7 +60,12 @@ class SalesOrderRead(BaseModel):
     order_date: date
     state: DocumentState
     total_amount: Money
-    source_so_id: int | None = None
+    # Non-null once this order has been converted to a customer invoice
+    # (mirrors VendorBillOut.source_po_id's role in reverse — §10.5's
+    # create-bill behaviour). Not on the ORM object: populated by the router
+    # from a CustomerInvoice lookup, never from model_validate directly.
+    # Powers the "Create Invoice" -> "View Invoice" swap on the SO detail page.
+    invoice_id: int | None = None
     lines: list[SalesOrderLineRead] = []
 
 

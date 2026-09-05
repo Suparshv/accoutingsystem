@@ -16,8 +16,9 @@ export default function Dashboard() {
       <div>
         <h1 className="text-2xl font-semibold text-text_primary">Dashboard</h1>
         <p className="text-sm text-text_secondary">
-          {user?.name ? `Signed in as ${user.name}. ` : ""}
-          Counts come straight from the database — nothing here is hardcoded.
+          {user?.name
+            ? `Signed in as ${user.name}.`
+            : "Overview of sales, purchase and budget activity."}
         </p>
       </div>
 

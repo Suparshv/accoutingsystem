@@ -48,7 +48,7 @@ export default function BudgetReport() {
         <div>
           <h1 className="text-2xl font-semibold text-text_primary">Budget Report</h1>
           <p className="text-sm text-text_secondary">
-            Achieved versus committed per budget, computed live from confirmed documents.
+            Achieved versus committed per budget, based on confirmed invoices and bills.
           </p>
         </div>
         <ViewSwitcher value={viewMode} onChange={setViewMode} />

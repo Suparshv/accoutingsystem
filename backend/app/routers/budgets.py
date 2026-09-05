@@ -50,7 +50,10 @@ def list_budgets(
         stmt = stmt.where(Budget.state == state)
     if search:
         stmt = stmt.where(Budget.name.ilike(f"%{search}%"))
-    stmt = stmt.order_by(Budget.created_at.desc())
+    # id tiebreaker: created_at alone isn't unique (rows from one bulk
+    # transaction share a timestamp), which lets LIMIT/OFFSET pagination
+    # duplicate/skip rows across pages — see routers/sales_orders.py.
+    stmt = stmt.order_by(Budget.created_at.desc(), Budget.id.desc())
 
     rows, total = paginate(db, stmt, page, page_size)
     names = _partner_names(db, [r.responsible_id for r in rows])

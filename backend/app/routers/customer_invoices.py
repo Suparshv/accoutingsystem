@@ -131,7 +131,10 @@ def list_customer_invoices(
         stmt = stmt.where(CustomerInvoice.state == state)
     if search:
         stmt = stmt.where(CustomerInvoice.number.ilike(f"%{search}%"))
-    stmt = stmt.order_by(CustomerInvoice.created_at.desc())
+    # id tiebreaker: created_at alone isn't unique (rows from one bulk
+    # transaction share a timestamp), which lets LIMIT/OFFSET pagination
+    # duplicate/skip rows across pages — see routers/sales_orders.py.
+    stmt = stmt.order_by(CustomerInvoice.created_at.desc(), CustomerInvoice.id.desc())
 
     rows, total = paginate(db, stmt, page, page_size)
     return Page[CustomerInvoiceListRow](

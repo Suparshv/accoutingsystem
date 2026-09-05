@@ -133,6 +133,9 @@ def list_users(
     stmt = select(User)
     if search:
         stmt = stmt.where(User.login_id.ilike(f"%{search}%"))
-    stmt = stmt.order_by(User.created_at.desc())
+    # id tiebreaker: created_at alone isn't unique (rows from one bulk
+    # transaction share a timestamp), which lets LIMIT/OFFSET pagination
+    # duplicate/skip rows across pages — see routers/sales_orders.py.
+    stmt = stmt.order_by(User.created_at.desc(), User.id.desc())
     rows, total = paginate(db, stmt, page, page_size)
     return Page(items=rows, total=total, page=page, page_size=page_size)

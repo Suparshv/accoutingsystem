@@ -13,7 +13,7 @@ export default function BalanceSheet() {
   return (
     <ReportShell
       title="Balance Sheet"
-      description="What the business owns and owes, derived entirely from posted ledger lines."
+      description="What the business owns and owes."
       year={year}
       onYearChange={setYear}
       loading={loading}
@@ -32,7 +32,7 @@ export default function BalanceSheet() {
           >
             {data.is_balanced
               ? "Balanced — total assets equal total liabilities."
-              : "NOT BALANCED — total assets do not equal total liabilities. The ledger is broken."}
+              : "NOT BALANCED — total assets do not equal total liabilities."}
           </div>
 
           <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">

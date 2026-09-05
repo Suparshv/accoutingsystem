@@ -56,7 +56,10 @@ def list_analytic_accounts(
     stmt = select(AnalyticAccount).where(AnalyticAccount.is_active.is_(True))
     if search:
         stmt = stmt.where(AnalyticAccount.name.ilike(f"%{search}%"))
-    stmt = stmt.order_by(AnalyticAccount.created_at.desc())
+    # id tiebreaker: created_at alone isn't unique (rows from one bulk
+    # transaction share a timestamp), which lets LIMIT/OFFSET pagination
+    # duplicate/skip rows across pages — see routers/sales_orders.py.
+    stmt = stmt.order_by(AnalyticAccount.created_at.desc(), AnalyticAccount.id.desc())
     rows, total = paginate(db, stmt, page, page_size)
     return Page(items=rows, total=total, page=page, page_size=page_size)
 

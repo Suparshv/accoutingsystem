@@ -97,7 +97,7 @@ export default function Login() {
               <span className="w-full border-t border-border" />
             </div>
             <div className="relative flex justify-center text-xs uppercase">
-              <span className="bg-background px-2 text-text_secondary">or test without backend</span>
+              <span className="bg-background px-2 text-text_secondary">or</span>
             </div>
           </div>
 

@@ -380,6 +380,83 @@ def test_a_failed_post_through_the_api_leaves_nothing_behind(
     assert _count_entry_lines(db) == lines_before
 
 
+# --- Scenario: cancelling a PO resolves its linked bill (§10.5) ------------
+
+
+def _confirmed_po(db, seed) -> PurchaseOrder:
+    order = PurchaseOrder(
+        number=purchase_service.next_purchase_order_number(db),
+        vendor_id=seed["partner_id"],
+        order_date=JANUARY,
+        state=DocumentState.CONFIRMED,
+    )
+    order.lines.append(
+        PurchaseOrderLine(
+            product_id=seed["table"].id,
+            quantity=Decimal("3.00"),
+            unit_price=Decimal("2000.00"),
+            line_total=Decimal("6000.00"),
+            sequence=10,
+        )
+    )
+    order.total_amount = Decimal("6000.00")
+    db.add(order)
+    db.flush()
+    return order
+
+
+def test_cancelling_po_with_confirmed_bill_is_blocked(db, purchase_ledger):
+    """Mirrors cancel_sales_order's Fix B on the purchase side: a confirmed
+    bill's journal entry is posted and immutable (R4) — cancelling the PO
+    must refuse rather than silently orphan it."""
+    order = _confirmed_po(db, purchase_ledger)
+    bill = purchase_service.create_bill_from_po(db, order)
+    bill, _ = purchase_service.confirm_vendor_bill(db, bill)
+    assert bill.state is DocumentState.CONFIRMED
+
+    with pytest.raises(AppError) as excinfo:
+        purchase_service.cancel_purchase_order(db, order)
+
+    assert excinfo.value.code == "INVALID_STATE_TRANSITION"
+    assert excinfo.value.status_code == 409
+    assert order.state is DocumentState.CONFIRMED
+    assert bill.state is DocumentState.CONFIRMED
+
+
+def test_cancelling_po_cascades_to_draft_bill(db, purchase_ledger):
+    """Mirrors cancel_sales_order's Fix C: a still-draft bill has no ledger
+    effect (journal_entry_id is null), so cancelling the PO safely cascades
+    to it instead of leaving it orphaned."""
+    order = _confirmed_po(db, purchase_ledger)
+    bill = purchase_service.create_bill_from_po(db, order)
+    assert bill.state is DocumentState.DRAFT
+
+    purchase_service.cancel_purchase_order(db, order)
+
+    assert order.state is DocumentState.CANCELLED
+    assert bill.state is DocumentState.CANCELLED
+
+
+def test_confirming_bill_whose_source_po_was_cancelled_is_blocked(db, purchase_ledger):
+    """Mirrors cancel_sales_order's Fix A: a bill already left orphaned (its
+    source PO cancelled some other way, e.g. a pre-fix row) must not be
+    confirmable. The PO is flipped directly here to reproduce that
+    pre-existing-data shape, since cancel_purchase_order itself now always
+    cascades to a draft bill and so can no longer produce it end to end.
+    """
+    order = _confirmed_po(db, purchase_ledger)
+    bill = purchase_service.create_bill_from_po(db, order)
+
+    order.state = DocumentState.CANCELLED
+    db.flush()
+
+    with pytest.raises(AppError) as excinfo:
+        purchase_service.confirm_vendor_bill(db, bill)
+
+    assert excinfo.value.code == "INVALID_STATE_TRANSITION"
+    assert excinfo.value.status_code == 409
+
+
 # --- Scenario: EXCEEDS_BUDGET warning (§10.8) ------------------------------
 
 

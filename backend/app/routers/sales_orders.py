@@ -78,6 +78,20 @@ def _replace_lines(
     so.total_amount = sales_service.recompute_total(so.lines)
 
 
+def _to_sales_order_read(db: Session, so: SalesOrder) -> SalesOrderRead:
+    """Attach the derived invoice_id (§10.5's create-bill behaviour, mirrored
+    on the sales side) — non-null once this order has been converted to a
+    customer invoice, regardless of that invoice's own state. Powers the
+    "Create Invoice" -> "View Invoice" swap on the SO detail page.
+    """
+    invoice_id = db.execute(
+        select(CustomerInvoice.id).where(CustomerInvoice.source_so_id == so.id)
+    ).scalar_one_or_none()
+    read = SalesOrderRead.model_validate(so)
+    read.invoice_id = invoice_id
+    return read
+
+
 def _to_invoice_read(db: Session, invoice: CustomerInvoice) -> CustomerInvoiceRead:
     """Attach the derived, never-stored payment fields (§7.7, P5).
 
@@ -107,7 +121,13 @@ def list_sales_orders(
         stmt = stmt.where(SalesOrder.state == state)
     if search:
         stmt = stmt.where(SalesOrder.number.ilike(f"%{search}%"))
-    stmt = stmt.order_by(SalesOrder.created_at.desc())
+    # A secondary tiebreaker is required, not cosmetic: seed/bulk-created rows
+    # routinely share the exact same created_at (Postgres's now() is
+    # transaction-scoped, so every row inserted in one transaction gets an
+    # identical timestamp), and ORDER BY + LIMIT/OFFSET over a non-unique
+    # column lets Postgres pick an arbitrary subset of the tied rows per
+    # query — which duplicates some rows across pages and drops others.
+    stmt = stmt.order_by(SalesOrder.created_at.desc(), SalesOrder.id.desc())
 
     rows, total = paginate(db, stmt, page, page_size)
     return Page[SalesOrderListRow](
@@ -124,7 +144,7 @@ def get_sales_order(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role(*LEDGER_ROLES)),
 ) -> SalesOrderRead:
-    return SalesOrderRead.model_validate(_get_or_404(db, sales_order_id))
+    return _to_sales_order_read(db, _get_or_404(db, sales_order_id))
 
 
 @router.post("", response_model=SalesOrderRead, status_code=status.HTTP_201_CREATED)
@@ -142,7 +162,7 @@ def create_sales_order(
     )
     db.commit()
     db.refresh(so)
-    return SalesOrderRead.model_validate(so)
+    return _to_sales_order_read(db, so)
 
 
 @router.put("/{sales_order_id}", response_model=SalesOrderRead)
@@ -171,7 +191,7 @@ def update_sales_order(
 
     db.commit()
     db.refresh(so)
-    return SalesOrderRead.model_validate(so)
+    return _to_sales_order_read(db, so)
 
 
 @router.post("/{sales_order_id}/confirm", response_model=SalesOrderRead)
@@ -184,7 +204,7 @@ def confirm_sales_order(
     so = sales_service.confirm_sales_order(db, sales_order_id=sales_order_id)
     db.commit()
     db.refresh(so)
-    return SalesOrderRead.model_validate(so)
+    return _to_sales_order_read(db, so)
 
 
 @router.post("/{sales_order_id}/cancel", response_model=SalesOrderRead)
@@ -197,7 +217,7 @@ def cancel_sales_order(
     sales_service.cancel_sales_order(db, so)
     db.commit()
     db.refresh(so)
-    return SalesOrderRead.model_validate(so)
+    return _to_sales_order_read(db, so)
 
 
 @router.post(

@@ -237,7 +237,11 @@ export type SalesOrder = {
   total_amount: string;
 };
 
-export type SalesOrderDetail = SalesOrder & { lines: DocumentLine[] };
+export type SalesOrderDetail = SalesOrder & {
+  lines: DocumentLine[];
+  // Non-null once this order has been converted to a customer invoice.
+  invoice_id: number | null;
+};
 
 export type PurchaseOrder = {
   id: number;
@@ -249,7 +253,11 @@ export type PurchaseOrder = {
   total_amount: string;
 };
 
-export type PurchaseOrderDetail = PurchaseOrder & { lines: DocumentLine[] };
+export type PurchaseOrderDetail = PurchaseOrder & {
+  lines: DocumentLine[];
+  // Non-null once this order has been converted to a vendor bill.
+  bill_id: number | null;
+};
 
 export type CustomerInvoice = {
   id: number;

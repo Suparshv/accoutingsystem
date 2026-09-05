@@ -112,8 +112,8 @@ export default function Budgets() {
         <div>
           <h1 className="text-2xl font-semibold text-text_primary">Analytic Budgets</h1>
           <p className="text-sm text-text_secondary">
-            Committed amounts per analytic account. Achievement is computed live from
-            confirmed invoices and bills — never stored.
+            Committed amounts per analytic account, measured against confirmed invoices
+            and bills.
           </p>
         </div>
         <Button type="button" onClick={() => setMode({ kind: "create" })}>
@@ -411,6 +411,7 @@ function BudgetForm({
     <FormShell
       title={budget ? budget.name : "New Budget"}
       state={budget?.state}
+      variant="budget"
       onBack={onBack}
       actions={actions}
     >
@@ -506,7 +507,7 @@ function BudgetForm({
 
         {!showsAchievement && budget && (
           <p className="text-xs text-text_secondary">
-            Achieved amounts appear once the budget is confirmed (SPEC.md §7.9).
+            Achieved amounts appear once the budget is confirmed.
           </p>
         )}
       </div>

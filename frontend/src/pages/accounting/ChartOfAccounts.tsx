@@ -140,8 +140,7 @@ export default function ChartOfAccounts() {
         <div>
           <h1 className="text-2xl font-semibold text-text_primary">Chart of Accounts</h1>
           <p className="text-sm text-text_secondary">
-            Every ledger account. Accounts are archived, never deleted — posted entries
-            reference them.
+            Every ledger account. Archive an account instead of deleting it.
           </p>
         </div>
         <div className="flex items-center gap-2">

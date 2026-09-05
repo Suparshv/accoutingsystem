@@ -321,6 +321,8 @@ def confirm_customer_invoice(
         NotFoundError: no such invoice.
         AppError(409, ALREADY_CONFIRMED): the invoice is not in draft.
         AppError(422, NO_LINES): the invoice has no lines to confirm.
+        AppError(409, INVALID_STATE_TRANSITION): the source sales order (if
+            any) has been cancelled since this invoice was created.
         Whatever services.accounting.post_journal_entry raises if, somehow,
         the built lines fail to balance (they cannot, by construction, but
         the engine is still the one place that checks).
@@ -334,6 +336,20 @@ def confirm_customer_invoice(
         )
     if not invoice.lines:
         raise AppError(422, "NO_LINES", "At least one line is required to confirm.")
+
+    # A cancelled SO can leave behind a still-draft invoice (cancel_sales_order
+    # only cascades when the invoice is draft AND blocks when it's confirmed —
+    # this closes the remaining gap: nothing previously stopped that orphaned
+    # draft invoice from later being confirmed and posted for a sale the
+    # business has already said didn't happen).
+    if invoice.source_so_id is not None:
+        source_so = db.get(SalesOrder, invoice.source_so_id)
+        if source_so is not None and source_so.state == DocumentState.CANCELLED:
+            raise AppError(
+                409,
+                "INVALID_STATE_TRANSITION",
+                "Cannot confirm: source sales order has been cancelled.",
+            )
 
     debtors_account_id = _get_debtors_account_id(db)
     sales_journal = _get_sales_journal(db)
@@ -375,8 +391,40 @@ def confirm_customer_invoice(
 
 
 def cancel_sales_order(db: Session, so: SalesOrder) -> SalesOrder:
-    """A sales order has no ledger effect in any state, so cancelling one is
-    always safe — mirrors services.purchase.cancel_purchase_order exactly."""
+    """A sales order itself has no ledger effect in any state, but a linked
+    customer invoice might — so cancelling the order must resolve that link
+    rather than ignore it (mirrors services.purchase.cancel_purchase_order
+    exactly):
+
+    - no linked invoice, or the invoice is already cancelled: cancel the SO,
+      nothing else to do.
+    - the invoice is still draft (journal_entry_id is null — no ledger
+      effect posted yet): cascade-cancel it in the same transaction. Safe,
+      since nothing has been posted for it.
+    - the invoice is confirmed (its journal entry is posted and immutable,
+      R4): refuse. Undoing a posted entry needs a reversal (the P2 path,
+      not built) — silently cancelling the SO here would leave the ledger
+      asserting income for a sale the business now says never happened.
+
+    Raises:
+        AppError(409, INVALID_STATE_TRANSITION): a confirmed invoice exists
+            for this order.
+    """
+    invoice = db.execute(
+        select(CustomerInvoice).where(CustomerInvoice.source_so_id == so.id)
+    ).scalar_one_or_none()
+
+    if invoice is not None:
+        if invoice.state == DocumentState.CONFIRMED:
+            raise AppError(
+                409,
+                "INVALID_STATE_TRANSITION",
+                "Cannot cancel: invoice already confirmed and posted. "
+                "Reverse the invoice's journal entry instead.",
+            )
+        if invoice.state == DocumentState.DRAFT:
+            cancel_customer_invoice(db, invoice)
+
     so.state = DocumentState.CANCELLED
     db.flush()
     return so

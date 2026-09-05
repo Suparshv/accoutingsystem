@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Plus } from "lucide-react";
 import { DataTable, type DataTableColumn } from "@/components/shared/DataTable";
 import { FormShell } from "@/components/shared/FormShell";
@@ -148,6 +149,7 @@ function PurchaseOrderForm({
   onBack: () => void;
   onSaved: () => void;
 }) {
+  const navigate = useNavigate();
   const detailPath = orderId ? `/purchase-orders/${orderId}` : null;
   const {
     data: order,
@@ -307,7 +309,7 @@ function PurchaseOrderForm({
     } catch (e) {
       toast({
         variant: "destructive",
-        title: `Could not ${label.toLowerCase()}`,
+        title: "Action failed",
         description: normaliseError(e).message,
       });
     } finally {
@@ -366,14 +368,23 @@ function PurchaseOrderForm({
       : []),
     ...(order && order.state === "confirmed"
       ? [
-          {
-            label: "Create Bill",
-            disabled: busy,
-            onClick: () =>
-              run("Vendor bill created", () =>
-                api.post(`/purchase-orders/${order.id}/create-bill`),
-              ),
-          },
+          order.bill_id
+            ? {
+                label: "View Bill",
+                variant: "outline" as const,
+                onClick: () =>
+                  navigate("/purchase/bills", {
+                    state: { openBillId: order.bill_id },
+                  }),
+              }
+            : {
+                label: "Create Bill",
+                disabled: busy,
+                onClick: () =>
+                  run("Vendor bill created", () =>
+                    api.post(`/purchase-orders/${order.id}/create-bill`),
+                  ),
+              },
           {
             label: "Cancel Order",
             variant: "outline" as const,
@@ -391,6 +402,7 @@ function PurchaseOrderForm({
     <FormShell
       title={order ? order.number : "New Purchase Order"}
       state={order?.state}
+      variant="document"
       onBack={onBack}
       actions={actions}
     >
@@ -434,8 +446,7 @@ function PurchaseOrderForm({
         />
 
         <p className="text-xs text-text_secondary">
-          Line totals and the order total are computed server-side from quantity × unit
-          price on save (AGENTS.md R6) — they refresh once the order is saved.
+          Totals update automatically when you save.
         </p>
       </div>
     </FormShell>

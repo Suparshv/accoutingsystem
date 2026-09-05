@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { Plus } from "lucide-react";
 import { DataTable, type DataTableColumn } from "@/components/shared/DataTable";
 import { FormShell } from "@/components/shared/FormShell";
@@ -58,7 +59,15 @@ function today(): string {
 type Mode = { kind: "list" } | { kind: "create" } | { kind: "edit"; invoiceId: number };
 
 export default function CustomerInvoices() {
-  const [mode, setMode] = useState<Mode>({ kind: "list" });
+  // "View Invoice" on the Sales Order page navigates here with the invoice's
+  // id in router state, so a specific invoice opens directly instead of
+  // landing on the list (mirrors the `from` pattern in RequireAuth/Login).
+  const location = useLocation();
+  const openInvoiceId = (location.state as { openInvoiceId?: number } | null)
+    ?.openInvoiceId;
+  const [mode, setMode] = useState<Mode>(
+    openInvoiceId ? { kind: "edit", invoiceId: openInvoiceId } : { kind: "list" },
+  );
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
@@ -125,8 +134,7 @@ export default function CustomerInvoices() {
         <div>
           <h1 className="text-2xl font-semibold text-text_primary">Customer Invoices</h1>
           <p className="text-sm text-text_secondary">
-            Confirming an invoice posts its journal entry — both happen together or not at
-            all.
+            Confirming an invoice posts it to the ledger.
           </p>
         </div>
         <Button type="button" onClick={() => setMode({ kind: "create" })}>
@@ -439,6 +447,7 @@ function CustomerInvoiceForm({
     <FormShell
       title={invoice ? invoice.number : "New Invoice"}
       state={invoice?.state}
+      variant="document"
       onBack={onBack}
       actions={actions}
     >
@@ -533,8 +542,8 @@ function CustomerInvoiceForm({
         />
 
         <p className="text-xs text-text_secondary">
-          Line totals and the invoice total are computed server-side on save (AGENTS.md
-          R6). Confirming posts the journal entry atomically with the state change.
+          Totals update automatically when you save. Confirming records the invoice in
+          the ledger.
         </p>
       </div>
 

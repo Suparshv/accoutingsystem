@@ -86,7 +86,10 @@ def list_payments(
         stmt = stmt.where(Payment.partner_id == partner_id)
     if state is not None:
         stmt = stmt.where(Payment.state == state)
-    stmt = stmt.order_by(Payment.created_at.desc())
+    # id tiebreaker: created_at alone isn't unique (rows from one bulk
+    # transaction share a timestamp), which lets LIMIT/OFFSET pagination
+    # duplicate/skip rows across pages — see routers/sales_orders.py.
+    stmt = stmt.order_by(Payment.created_at.desc(), Payment.id.desc())
 
     rows, total = paginate(db, stmt, page, page_size)
     names = _partner_names(db, [r.partner_id for r in rows])

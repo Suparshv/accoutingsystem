@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Plus } from "lucide-react";
 import { DataTable, type DataTableColumn } from "@/components/shared/DataTable";
 import { FormShell } from "@/components/shared/FormShell";
@@ -148,6 +149,7 @@ function SalesOrderForm({
   onBack: () => void;
   onSaved: () => void;
 }) {
+  const navigate = useNavigate();
   const detailPath = orderId ? `/sales-orders/${orderId}` : null;
   const {
     data: order,
@@ -307,7 +309,7 @@ function SalesOrderForm({
     } catch (e) {
       toast({
         variant: "destructive",
-        title: `Could not ${label.toLowerCase()}`,
+        title: "Action failed",
         description: normaliseError(e).message,
       });
     } finally {
@@ -366,14 +368,23 @@ function SalesOrderForm({
       : []),
     ...(order && order.state === "confirmed"
       ? [
-          {
-            label: "Create Invoice",
-            disabled: busy,
-            onClick: () =>
-              run("Invoice created", () =>
-                api.post(`/sales-orders/${order.id}/create-invoice`),
-              ),
-          },
+          order.invoice_id
+            ? {
+                label: "View Invoice",
+                variant: "outline" as const,
+                onClick: () =>
+                  navigate("/sales/invoices", {
+                    state: { openInvoiceId: order.invoice_id },
+                  }),
+              }
+            : {
+                label: "Create Invoice",
+                disabled: busy,
+                onClick: () =>
+                  run("Invoice created", () =>
+                    api.post(`/sales-orders/${order.id}/create-invoice`),
+                  ),
+              },
           {
             label: "Cancel Order",
             variant: "outline" as const,
@@ -391,6 +402,7 @@ function SalesOrderForm({
     <FormShell
       title={order ? order.number : "New Sales Order"}
       state={order?.state}
+      variant="document"
       onBack={onBack}
       actions={actions}
     >
@@ -434,8 +446,7 @@ function SalesOrderForm({
         />
 
         <p className="text-xs text-text_secondary">
-          Line totals and the order total are computed server-side from quantity × unit
-          price on save (AGENTS.md R6) — they refresh once the order is saved.
+          Totals update automatically when you save.
         </p>
       </div>
     </FormShell>

@@ -14,14 +14,15 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.enums import UserRole
+from app.core.enums import DocumentState, UserRole
+from app.core.errors import AppError
 from app.core.security import encode_token, hash_password
 from app.database import get_db
 from app.main import app
 from app.models.journal_entry import JournalEntry
 from app.models.partner import Partner
 from app.models.product import Product
-from app.models.sales import CustomerInvoice
+from app.models.sales import CustomerInvoice, SalesOrder
 from app.models.user import User
 from app.services import sales as sales_service
 
@@ -288,6 +289,121 @@ def test_confirming_an_invoice_with_no_lines_is_rejected(db, ledger):
         sales_service.confirm_customer_invoice(db, invoice_id=invoice.id)
 
     assert excinfo.value.code == "NO_LINES"
+
+
+# --- Scenario: cancelling an SO resolves its linked invoice (§10.6) --------
+
+
+def test_cancelling_so_with_confirmed_invoice_is_blocked(client, ledger, product, db):
+    """Fix B: a confirmed invoice's journal entry is posted and immutable
+    (R4) — cancelling the SO must refuse rather than silently orphan it."""
+    so = _create_so(client, ledger, product)
+    client.post(f"/api/sales-orders/{so['id']}/confirm")
+    invoice = client.post(f"/api/sales-orders/{so['id']}/create-invoice").json()
+    confirmed = client.post(f"/api/customer-invoices/{invoice['id']}/confirm")
+    assert confirmed.status_code == 200
+
+    response = client.post(f"/api/sales-orders/{so['id']}/cancel")
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "INVALID_STATE_TRANSITION"
+    # Neither document actually changed.
+    so_after = client.get(f"/api/sales-orders/{so['id']}").json()
+    invoice_after = client.get(f"/api/customer-invoices/{invoice['id']}").json()
+    assert so_after["state"] == "confirmed"
+    assert invoice_after["state"] == "confirmed"
+
+
+def test_cancelling_so_cascades_to_draft_invoice(client, ledger, product):
+    """Fix C: a still-draft invoice has no ledger effect (journal_entry_id
+    is null), so cancelling the SO safely cascades to it instead of leaving
+    it orphaned — the exact shape SO #5 / Invoice #5 were found in."""
+    so = _create_so(client, ledger, product)
+    client.post(f"/api/sales-orders/{so['id']}/confirm")
+    invoice = client.post(f"/api/sales-orders/{so['id']}/create-invoice").json()
+    assert invoice["state"] == "draft"
+
+    response = client.post(f"/api/sales-orders/{so['id']}/cancel")
+
+    assert response.status_code == 200
+    assert response.json()["state"] == "cancelled"
+    invoice_after = client.get(f"/api/customer-invoices/{invoice['id']}").json()
+    assert invoice_after["state"] == "cancelled"
+
+
+def test_confirming_invoice_whose_source_so_was_cancelled_is_blocked(
+    client, ledger, product, db
+):
+    """Fix A: closes the gap Fix C's cascade cannot retroactively cover — an
+    invoice already left orphaned (its source SO cancelled some other way,
+    e.g. a pre-fix row) must not be confirmable. Since cancel_sales_order
+    itself now always cascades to a draft invoice, the SO is flipped
+    directly here to reproduce that pre-existing-data shape rather than one
+    the current code can still produce end to end.
+    """
+    so = _create_so(client, ledger, product)
+    client.post(f"/api/sales-orders/{so['id']}/confirm")
+    invoice = client.post(f"/api/sales-orders/{so['id']}/create-invoice").json()
+
+    so_row = db.get(SalesOrder, so["id"])
+    so_row.state = DocumentState.CANCELLED
+    db.flush()
+
+    response = client.post(f"/api/customer-invoices/{invoice['id']}/confirm")
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "INVALID_STATE_TRANSITION"
+
+
+def test_cancel_sales_order_service_blocks_and_cascades_directly(db, ledger, product):
+    """Same two behaviours, exercised at the service layer directly (mirrors
+    test_bill_flow.py's style) so the guard is proven independent of the
+    router's error-envelope plumbing."""
+    so = sales_service.create_sales_order(
+        db,
+        customer_id=ledger["partner_id"],
+        order_date=date(2026, 1, 10),
+        lines=[
+            {
+                "product_id": product.id,
+                "quantity": Decimal("1"),
+                "unit_price": product.sales_price,
+            }
+        ],
+    )
+    sales_service.confirm_sales_order(db, sales_order_id=so.id)
+    invoice = sales_service.create_invoice_from_so(db, sales_order_id=so.id)
+
+    # Still draft: cancelling cascades cleanly.
+    sales_service.cancel_sales_order(db, so)
+    assert so.state == DocumentState.CANCELLED
+    assert invoice.state == DocumentState.CANCELLED
+
+
+def test_cancel_sales_order_service_blocks_on_confirmed_invoice(db, ledger, product):
+    so = sales_service.create_sales_order(
+        db,
+        customer_id=ledger["partner_id"],
+        order_date=date(2026, 1, 10),
+        lines=[
+            {
+                "product_id": product.id,
+                "quantity": Decimal("1"),
+                "unit_price": product.sales_price,
+            }
+        ],
+    )
+    sales_service.confirm_sales_order(db, sales_order_id=so.id)
+    invoice = sales_service.create_invoice_from_so(db, sales_order_id=so.id)
+    sales_service.confirm_customer_invoice(db, invoice_id=invoice.id)
+
+    with pytest.raises(AppError) as excinfo:
+        sales_service.cancel_sales_order(db, so)
+
+    assert excinfo.value.code == "INVALID_STATE_TRANSITION"
+    assert excinfo.value.status_code == 409
+    assert so.state == DocumentState.CONFIRMED
+    assert invoice.state == DocumentState.CONFIRMED
 
 
 # --- Reports (§10.9) ---------------------------------------------------------

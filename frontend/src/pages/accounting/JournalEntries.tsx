@@ -122,7 +122,8 @@ export default function JournalEntries() {
         <div>
           <h1 className="text-2xl font-semibold text-text_primary">Journal Entries</h1>
           <p className="text-sm text-text_secondary">
-            The ledger. Every posted entry is immutable — to undo one, reverse it.
+            The ledger. Posted entries can't be edited or deleted — reverse an entry to
+            undo it.
           </p>
         </div>
         <Button type="button" onClick={() => setMode({ kind: "create" })}>
@@ -442,8 +443,7 @@ function JournalEntryView({ entryId, onBack }: { entryId: number; onBack: () => 
         </div>
 
         <p className="text-xs text-text_secondary">
-          Posted entries cannot be edited or deleted (SPEC.md P4) — the API exposes no PUT
-          or DELETE for them. To undo one, post a reversing entry.
+          Posted entries cannot be edited or deleted. To undo one, post a reversing entry.
         </p>
       </div>
     </FormShell>

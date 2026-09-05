@@ -122,6 +122,41 @@ def confirm_purchase_order(db: Session, order: PurchaseOrder) -> PurchaseOrder:
 
 
 def cancel_purchase_order(db: Session, order: PurchaseOrder) -> PurchaseOrder:
+    """A purchase order itself has no ledger effect in any state, but a
+    linked vendor bill might — so cancelling the order must resolve that
+    link rather than ignore it (mirrors services.sales.cancel_sales_order
+    exactly):
+
+    - no linked bill, or the bill is already cancelled: cancel the PO,
+      nothing else to do.
+    - the bill is still draft (journal_entry_id is null — no ledger effect
+      posted yet): cascade-cancel it in the same transaction. Safe, since
+      nothing has been posted for it.
+    - the bill is confirmed (its journal entry is posted and immutable,
+      R4): refuse. Undoing a posted entry needs a reversal (the P2 path,
+      not built) — silently cancelling the PO here would leave the ledger
+      asserting an expense/liability for a purchase the business now says
+      never happened.
+
+    Raises:
+        AppError(409, INVALID_STATE_TRANSITION): a confirmed bill exists for
+            this order.
+    """
+    bill = db.execute(
+        select(VendorBill).where(VendorBill.source_po_id == order.id)
+    ).scalar_one_or_none()
+
+    if bill is not None:
+        if bill.state == DocumentState.CONFIRMED:
+            raise AppError(
+                409,
+                "INVALID_STATE_TRANSITION",
+                "Cannot cancel: bill already confirmed and posted. Reverse "
+                "the bill's journal entry instead.",
+            )
+        if bill.state == DocumentState.DRAFT:
+            cancel_vendor_bill(db, bill)
+
     order.state = DocumentState.CANCELLED
     db.flush()
     return order
@@ -215,6 +250,20 @@ def confirm_vendor_bill(db: Session, bill: VendorBill) -> tuple[VendorBill, list
         )
     if not bill.lines:
         raise AppError(422, "NO_LINES", "A bill needs at least one line to confirm.")
+
+    # A cancelled PO can leave behind a still-draft bill (cancel_purchase_order
+    # only cascades when the bill is draft AND blocks when it's confirmed —
+    # this closes the remaining gap: nothing previously stopped that orphaned
+    # draft bill from later being confirmed and posted for a purchase the
+    # business has already said never happened).
+    if bill.source_po_id is not None:
+        source_po = db.get(PurchaseOrder, bill.source_po_id)
+        if source_po is not None and source_po.state == DocumentState.CANCELLED:
+            raise AppError(
+                409,
+                "INVALID_STATE_TRANSITION",
+                "Cannot confirm: source purchase order has been cancelled.",
+            )
 
     # Computed BEFORE the state change, so the bill being confirmed does not
     # count itself as already-achieved (§10.8 names the remaining amount

@@ -59,6 +59,11 @@ class PurchaseOrderOut(BaseModel):
     order_date: date
     state: DocumentState
     total_amount: Money
+    # Non-null once this order has been converted to a vendor bill (mirrors
+    # VendorBillOut.source_po_id in reverse, §10.5). Not on the ORM object:
+    # populated by the router from a VendorBill lookup. Powers the "Create
+    # Bill" -> "View Bill" swap on the PO detail page.
+    bill_id: int | None = None
     lines: list[PurchaseOrderLineOut] = []
 
 

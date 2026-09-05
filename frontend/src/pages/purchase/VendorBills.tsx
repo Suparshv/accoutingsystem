@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { Plus } from "lucide-react";
 import { DataTable, type DataTableColumn } from "@/components/shared/DataTable";
 import { FormShell } from "@/components/shared/FormShell";
@@ -58,7 +59,14 @@ function today(): string {
 type Mode = { kind: "list" } | { kind: "create" } | { kind: "edit"; billId: number };
 
 export default function VendorBills() {
-  const [mode, setMode] = useState<Mode>({ kind: "list" });
+  // "View Bill" on the Purchase Order page navigates here with the bill's id
+  // in router state, so a specific bill opens directly instead of landing on
+  // the list (mirrors the `from` pattern in RequireAuth/Login).
+  const location = useLocation();
+  const openBillId = (location.state as { openBillId?: number } | null)?.openBillId;
+  const [mode, setMode] = useState<Mode>(
+    openBillId ? { kind: "edit", billId: openBillId } : { kind: "list" },
+  );
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
@@ -125,7 +133,7 @@ export default function VendorBills() {
         <div>
           <h1 className="text-2xl font-semibold text-text_primary">Vendor Bills</h1>
           <p className="text-sm text-text_secondary">
-            Confirming a bill posts its journal entry — both happen together or not at all.
+            Confirming a bill posts it to the ledger.
           </p>
         </div>
         <Button type="button" onClick={() => setMode({ kind: "create" })}>
@@ -433,6 +441,7 @@ function VendorBillForm({
     <FormShell
       title={bill ? bill.number : "New Vendor Bill"}
       state={bill?.state}
+      variant="document"
       onBack={onBack}
       actions={actions}
     >
@@ -527,8 +536,8 @@ function VendorBillForm({
         />
 
         <p className="text-xs text-text_secondary">
-          Line totals and the bill total are computed server-side on save (AGENTS.md R6).
-          Confirming posts the journal entry atomically with the state change.
+          Totals update automatically when you save. Confirming records the bill in the
+          ledger.
         </p>
       </div>
 

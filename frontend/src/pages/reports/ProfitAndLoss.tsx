@@ -13,7 +13,7 @@ export default function ProfitAndLoss() {
   return (
     <ReportShell
       title="Profit and Loss"
-      description="What was earned and spent over the period, aggregated from posted entries."
+      description="What was earned and spent over the period."
       year={year}
       onYearChange={setYear}
       loading={loading}

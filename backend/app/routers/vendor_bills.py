@@ -60,7 +60,10 @@ def list_vendor_bills(
         stmt = stmt.where(VendorBill.vendor_id == vendor_id)
     if search:
         stmt = stmt.where(VendorBill.number.ilike(f"%{search}%"))
-    stmt = stmt.order_by(VendorBill.created_at.desc())
+    # id tiebreaker: created_at alone isn't unique (rows from one bulk
+    # transaction share a timestamp), which lets LIMIT/OFFSET pagination
+    # duplicate/skip rows across pages — see sales_orders.py's list route.
+    stmt = stmt.order_by(VendorBill.created_at.desc(), VendorBill.id.desc())
 
     rows, total = paginate(db, stmt, page, page_size)
     names = _vendor_names(db, [r.vendor_id for r in rows])

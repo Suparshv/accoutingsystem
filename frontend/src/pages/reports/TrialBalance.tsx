@@ -21,7 +21,7 @@ export default function TrialBalance() {
   return (
     <ReportShell
       title="Trial Balance"
-      description="Every account's debit and credit totals. If the grand totals differ, the ledger is broken."
+      description="Every account's debit and credit totals."
       year={year}
       onYearChange={setYear}
       loading={loading}
