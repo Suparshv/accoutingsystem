@@ -1,13 +1,19 @@
 import type { ReactNode } from "react";
+import { RotateCcw } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-// SPEC.md §13.2. getItemId and emptyMessage aren't in the spec's literal
-// prop list but are needed to render stable keys and a real empty state —
-// the same small additions DataTable makes for the same reasons.
+// SPEC.md §13.2. getItemId, emptyMessage, error and onRetry aren't in the
+// spec's literal prop list but are needed so Kanban — now a real second view
+// over the same fetched data as DataTable, not a mock — can show the same
+// loading/error/empty/success states DataTable does, per AGENTS.md §5's
+// "loading, error and empty states all render" rule.
 export type KanbanGridProps<T> = {
   items: T[];
   renderCard: (item: T) => ReactNode;
   loading?: boolean;
+  error?: { message: string } | null;
+  onRetry?: () => void;
   onCardClick?: (item: T) => void;
   getItemId: (item: T) => string | number;
   emptyMessage?: string;
@@ -17,6 +23,8 @@ export function KanbanGrid<T>({
   items,
   renderCard,
   loading = false,
+  error = null,
+  onRetry,
   onCardClick,
   getItemId,
   emptyMessage = "Nothing to show yet.",
@@ -30,6 +38,20 @@ export function KanbanGrid<T>({
             className="h-28 animate-pulse rounded-lg border border-border bg-surface"
           />
         ))}
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center gap-3 rounded-lg border border-border px-4 py-10 text-center">
+        <p className="text-sm text-danger">{error.message}</p>
+        {onRetry && (
+          <Button type="button" variant="outline" size="sm" onClick={onRetry}>
+            <RotateCcw className="mr-2 h-4 w-4" />
+            Retry
+          </Button>
+        )}
       </div>
     );
   }

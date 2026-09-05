@@ -14,10 +14,11 @@ type MoneyInputProps = {
   className?: string;
   disabled?: boolean;
   name?: string;
+  id?: string;
 };
 
 export const MoneyInput = forwardRef<HTMLInputElement, MoneyInputProps>(
-  ({ value, onChange, placeholder = "0.00", className, disabled, name }, ref) => {
+  ({ value, onChange, placeholder = "0.00", className, disabled, name, id }, ref) => {
     function handleChange(e: ChangeEvent<HTMLInputElement>) {
       const next = e.target.value;
       if (MONEY_MASK.test(next)) {
@@ -28,6 +29,7 @@ export const MoneyInput = forwardRef<HTMLInputElement, MoneyInputProps>(
     return (
       <Input
         ref={ref}
+        id={id}
         name={name}
         type="text"
         inputMode="decimal"

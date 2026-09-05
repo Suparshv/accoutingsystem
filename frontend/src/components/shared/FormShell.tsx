@@ -28,14 +28,17 @@ export type FormShellAction = {
 
 type FormShellProps = {
   title: string;
-  state: string;
+  // Omit for records with no document lifecycle (masters like Contacts,
+  // Products, Analytic Accounts) — the pipeline strip only renders when
+  // a state is given.
+  state?: string;
   actions: FormShellAction[];
   children: ReactNode;
   onBack?: () => void;
 };
 
 export function FormShell({ title, state, actions, children, onBack }: FormShellProps) {
-  const currentIndex = PIPELINE_STEPS.indexOf(state as PipelineStep);
+  const currentIndex = state ? PIPELINE_STEPS.indexOf(state as PipelineStep) : -1;
 
   return (
     <div className="flex flex-col gap-6">
@@ -63,27 +66,29 @@ export function FormShell({ title, state, actions, children, onBack }: FormShell
         </div>
       </div>
 
-      <ol className="flex flex-wrap items-center gap-2 text-sm">
-        {PIPELINE_STEPS.map((step, i) => (
-          <li key={step} className="flex items-center gap-2">
-            <span
-              className={cn(
-                "rounded-full px-3 py-1 font-medium",
-                i === currentIndex
-                  ? "bg-primary text-primary-foreground"
-                  : "bg-surface text-text_secondary",
-              )}
-            >
-              {PIPELINE_LABELS[step]}
-            </span>
-            {i < PIPELINE_STEPS.length - 1 && (
-              <span aria-hidden="true" className="text-text_secondary">
-                &rsaquo;
+      {state && (
+        <ol className="flex flex-wrap items-center gap-2 text-sm">
+          {PIPELINE_STEPS.map((step, i) => (
+            <li key={step} className="flex items-center gap-2">
+              <span
+                className={cn(
+                  "rounded-full px-3 py-1 font-medium",
+                  i === currentIndex
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-surface text-text_secondary",
+                )}
+              >
+                {PIPELINE_LABELS[step]}
               </span>
-            )}
-          </li>
-        ))}
-      </ol>
+              {i < PIPELINE_STEPS.length - 1 && (
+                <span aria-hidden="true" className="text-text_secondary">
+                  &rsaquo;
+                </span>
+              )}
+            </li>
+          ))}
+        </ol>
+      )}
 
       <div className="rounded-lg border border-border bg-background p-5">{children}</div>
     </div>
