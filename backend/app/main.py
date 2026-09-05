@@ -13,6 +13,8 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.config import settings
 from app.core.errors import AppError
 from app.routers import accounts, journal_entries, journals
+from app.core.errors import register_exception_handlers
+from app.routers import analytics, auth, partners, products
 
 # Startup guard for the Python floor in SPEC.md §3 (python: ">=3.10"). Raising
 # here fails loudly at import time rather than at the first use of 3.10 syntax.
@@ -34,6 +36,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+register_exception_handlers(app)
+
+app.include_router(auth.router, prefix="/api")
+app.include_router(partners.router, prefix="/api")
+app.include_router(products.router, prefix="/api")
+app.include_router(analytics.router, prefix="/api")
 
 
 # --- error envelope (SPEC.md §12.1) -----------------------------------------
