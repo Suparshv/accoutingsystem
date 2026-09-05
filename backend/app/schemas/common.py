@@ -1,0 +1,27 @@
+"""Shared Pydantic building blocks (SPEC.md §9 conventions)."""
+
+from decimal import Decimal
+from typing import Annotated, Generic, TypeVar
+
+from pydantic import BaseModel, Field, PlainSerializer
+
+# Money crosses the wire as a STRING, never a JSON number: JSON numbers are
+# IEEE-754 doubles, which reintroduces the exact float problem Decimal exists
+# to avoid (§9 money_wire_format). max_digits/decimal_places also make Pydantic
+# REJECT a third decimal place rather than silently rounding it (§11).
+Money = Annotated[
+    Decimal,
+    Field(max_digits=14, decimal_places=2),
+    PlainSerializer(lambda v: f"{v:.2f}", return_type=str, when_used="json"),
+]
+
+T = TypeVar("T")
+
+
+class Page(BaseModel, Generic[T]):
+    """The envelope every list endpoint returns. No unbounded arrays (§9)."""
+
+    items: list[T]
+    total: int
+    page: int
+    page_size: int
