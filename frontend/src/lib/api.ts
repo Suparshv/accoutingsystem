@@ -61,15 +61,61 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   return (await response.json()) as T;
 }
 
+import { getMockResponse } from "./mockData";
+
+let demoMode =
+  typeof window !== "undefined" &&
+  window.sessionStorage.getItem("urban_demo_mode") === "true";
+
+export function setDemoMode(active: boolean): void {
+  demoMode = active;
+  if (typeof window !== "undefined") {
+    if (active) {
+      window.sessionStorage.setItem("urban_demo_mode", "true");
+    } else {
+      window.sessionStorage.removeItem("urban_demo_mode");
+    }
+  }
+}
+
+export function isDemoMode(): boolean {
+  return demoMode;
+}
+
 export const api = {
-  get: <T>(path: string) => request<T>(path, { method: "GET" }),
-  post: <T>(path: string, body?: unknown) =>
-    request<T>(path, { method: "POST", body: body ? JSON.stringify(body) : undefined }),
-  put: <T>(path: string, body?: unknown) =>
-    request<T>(path, { method: "PUT", body: body ? JSON.stringify(body) : undefined }),
-  patch: <T>(path: string, body?: unknown) =>
-    request<T>(path, { method: "PATCH", body: body ? JSON.stringify(body) : undefined }),
-  delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
+  get: async <T>(path: string): Promise<T> => {
+    if (demoMode) {
+      const mock = getMockResponse<T>(path);
+      if (mock !== undefined) {
+        return mock;
+      }
+    }
+    return request<T>(path, { method: "GET" });
+  },
+  post: async <T>(path: string, body?: unknown): Promise<T> => {
+    if (demoMode) {
+      return { success: true, id: 99 } as unknown as T;
+    }
+    return request<T>(path, { method: "POST", body: body ? JSON.stringify(body) : undefined });
+  },
+  put: async <T>(path: string, body?: unknown): Promise<T> => {
+    if (demoMode) {
+      return { success: true } as unknown as T;
+    }
+    return request<T>(path, { method: "PUT", body: body ? JSON.stringify(body) : undefined });
+  },
+  patch: async <T>(path: string, body?: unknown): Promise<T> => {
+    if (demoMode) {
+      return { success: true } as unknown as T;
+    }
+    return request<T>(path, { method: "PATCH", body: body ? JSON.stringify(body) : undefined });
+  },
+  delete: async <T>(path: string): Promise<T> => {
+    if (demoMode) {
+      return undefined as T;
+    }
+    return request<T>(path, { method: "DELETE" });
+  },
 };
 
 export function normaliseError(e: unknown): ApiError {

@@ -4,17 +4,23 @@ export default {
   theme: {
     extend: {
       colors: {
-        // SPEC.md §13.1 literal tokens — used directly (bg-surface, text-text_secondary, ...)
+        // Design tokens — the ONLY place a hex value appears. Components always
+        // reference these by name (bg-surface, text-text_secondary, ...).
+        //
+        // Restyled to match Odoo's own visual identity rather than SPEC.md
+        // §13.1's original palette: muted plum primary, near-white greys, and
+        // deliberately NO GREEN anywhere — Odoo doesn't use it, so "success"
+        // states (paid / achieved / balanced) are a muted rose-plum instead.
         background: "#FFFFFF",
-        surface: "#F8F9FB",
-        border: "#E2E5EA",
-        text_primary: "#1A1D23",
-        text_secondary: "#6B7280",
-        primary_hover: "#5F2242",
-        success: "#16A34A",
-        warning: "#D97706",
-        danger: "#DC2626",
-        draft: "#9CA3AF",
+        surface: "#F8F9FA",
+        border: "#E0E0E0",
+        text_primary: "#212529",
+        text_secondary: "#6C757D",
+        primary_hover: "#5C3B54",
+        success: "#6C4F63", // muted rose/plum — intentionally not green
+        warning: "#B08D57", // muted amber/gold
+        danger: "#A94442", // muted brick red
+        draft: "#ADB5BD", // neutral grey
 
         // shadcn/ui semantic tokens — resolved via CSS variables in src/index.css,
         // which are pinned to the same SPEC.md palette. Required by the shadcn

@@ -8,7 +8,13 @@ type NavGroup = { label: string | null; items: NavItem[] };
 
 // SPEC.md §13.3 — exact menu structure for admin/accountant.
 const MAIN_GROUPS: NavGroup[] = [
-  { label: null, items: [{ label: "Dashboard", href: "/" }] },
+  {
+    label: null,
+    items: [
+      { label: "Dashboard", href: "/" },
+      { label: "Mock Showroom", href: "/dev/components" },
+    ],
+  },
   {
     label: "Sales",
     items: [

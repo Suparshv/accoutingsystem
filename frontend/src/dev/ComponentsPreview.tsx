@@ -42,17 +42,18 @@ const ALL_STATUSES: Status[] = [
 
 type DataTableDemoState = "success" | "loading" | "error" | "empty";
 
+// Money fields are strings here, exactly as they arrive from the API.
 type POLine = {
   product: string;
   quantity: number;
-  unitPrice: number;
-  lineTotal: number;
+  unitPrice: string;
+  lineTotal: string;
 };
 
 type JELine = {
   account: string;
-  debit: number;
-  credit: number;
+  debit: string;
+  credit: string;
 };
 
 export default function ComponentsPreview() {
@@ -63,13 +64,13 @@ export default function ComponentsPreview() {
   const [moneyValue, setMoneyValue] = useState("1999.99");
 
   const [poLines, setPoLines] = useState<POLine[]>([
-    { product: "Chair", quantity: 3, unitPrice: 2000, lineTotal: 6000 },
-    { product: "Sofa", quantity: 1, unitPrice: 4000, lineTotal: 4000 },
+    { product: "Chair", quantity: 3, unitPrice: "2000.00", lineTotal: "6000.00" },
+    { product: "Sofa", quantity: 1, unitPrice: "4000.00", lineTotal: "4000.00" },
   ]);
 
   const [jeLines, setJeLines] = useState<JELine[]>([
-    { account: "Debtors A/c", debit: 10000, credit: 0 },
-    { account: "Sales Income A/c", debit: 0, credit: 9000 },
+    { account: "Debtors A/c", debit: "10000.00", credit: "0.00" },
+    { account: "Sales Income A/c", debit: "0.00", credit: "9000.00" },
   ]);
   const [jeBalanced, setJeBalanced] = useState(false);
 
@@ -240,7 +241,7 @@ export default function ComponentsPreview() {
           onAddRow={() =>
             setPoLines((prev) => [
               ...prev,
-              { product: "New product", quantity: 1, unitPrice: 0, lineTotal: 0 },
+              { product: "New product", quantity: 1, unitPrice: "0.00", lineTotal: "0.00" },
             ])
           }
           onRemoveRow={(index) => setPoLines((prev) => prev.filter((_, i) => i !== index))}
@@ -257,7 +258,10 @@ export default function ComponentsPreview() {
             getCredit={(row) => row.credit}
             onBalanceChange={setJeBalanced}
             onAddRow={() =>
-              setJeLines((prev) => [...prev, { account: "New account", debit: 0, credit: 0 }])
+              setJeLines((prev) => [
+                ...prev,
+                { account: "New account", debit: "0.00", credit: "0.00" },
+              ])
             }
             onRemoveRow={(index) => setJeLines((prev) => prev.filter((_, i) => i !== index))}
           />

@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { MoneyDisplay } from "@/components/shared/MoneyDisplay";
+import { fromMinorUnits, sumMinorUnits } from "@/lib/money";
 import { cn } from "@/lib/utils";
 
 export type LineItemColumn<T> = {
@@ -19,15 +20,18 @@ export type LineItemColumn<T> = {
   align?: "left" | "right";
 };
 
+// The getters return money STRINGS ("6000.00"), exactly as they arrive from
+// the API and as MoneyInput holds them. Totals below are summed in integer
+// paise via lib/money.ts — never as JS floats (AGENTS.md R2 / SPEC.md P2).
 type DocumentVariant<T> = {
   variant?: "document";
-  getLineTotal: (row: T) => number;
+  getLineTotal: (row: T) => string;
 };
 
 type JournalEntryVariant<T> = {
   variant: "journal_entry";
-  getDebit: (row: T) => number;
-  getCredit: (row: T) => number;
+  getDebit: (row: T) => string;
+  getCredit: (row: T) => string;
   // Lets the page (which owns the Post button) disable it until balanced —
   // SPEC.md §13.2 journal_entry_variant.
   onBalanceChange?: (isBalanced: boolean) => void;
@@ -52,15 +56,12 @@ export function LineItemsTable<T>(props: LineItemsTableProps<T>) {
   const { rows, columns, onAddRow, onRemoveRow, addLabel = "Add line" } = props;
   const isJournalEntry = props.variant === "journal_entry";
 
-  const totalDebit = isJournalEntry
-    ? rows.reduce((sum, row) => sum + props.getDebit(row), 0)
-    : 0;
-  const totalCredit = isJournalEntry
-    ? rows.reduce((sum, row) => sum + props.getCredit(row), 0)
-    : 0;
+  // All three totals are exact integer-paise sums, never float arithmetic.
+  const totalDebit = isJournalEntry ? sumMinorUnits(rows.map(props.getDebit)) : 0;
+  const totalCredit = isJournalEntry ? sumMinorUnits(rows.map(props.getCredit)) : 0;
   const difference = totalDebit - totalCredit;
   const documentTotal = !isJournalEntry
-    ? rows.reduce((sum, row) => sum + props.getLineTotal(row), 0)
+    ? sumMinorUnits(rows.map(props.getLineTotal))
     : 0;
 
   useEffect(() => {
@@ -130,22 +131,22 @@ export function LineItemsTable<T>(props: LineItemsTableProps<T>) {
         <div className="flex flex-col items-end gap-1 border-t border-border pt-3 text-sm">
           <div className="flex gap-6">
             <span className="text-text_secondary">
-              Debit: <MoneyDisplay value={totalDebit} />
+              Debit: <MoneyDisplay value={fromMinorUnits(totalDebit)} />
             </span>
             <span className="text-text_secondary">
-              Credit: <MoneyDisplay value={totalCredit} />
+              Credit: <MoneyDisplay value={fromMinorUnits(totalCredit)} />
             </span>
           </div>
           {difference !== 0 && (
             <span className="font-medium text-danger">
-              Difference: <MoneyDisplay value={Math.abs(difference)} />
+              Difference: <MoneyDisplay value={fromMinorUnits(Math.abs(difference))} />
             </span>
           )}
         </div>
       ) : (
         <div className="flex justify-end border-t border-border pt-3 text-sm font-medium text-text_primary">
           Total:
-          <MoneyDisplay value={documentTotal} className="ml-2" />
+          <MoneyDisplay value={fromMinorUnits(documentTotal)} className="ml-2" />
         </div>
       )}
     </div>

@@ -6,7 +6,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { api, setAuthToken } from "@/lib/api";
+import { api, setAuthToken, setDemoMode, isDemoMode } from "@/lib/api";
 import type { UserRole } from "@/types/api";
 
 export type AuthenticatedUser = {
@@ -40,6 +40,7 @@ type AuthContextValue = {
     confirmPassword: string;
   }) => Promise<void>;
   logout: () => void;
+  loginDemo: () => void;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -49,9 +50,21 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 // That is the deliberate tradeoff for keeping the token out of
 // localStorage/sessionStorage, where an XSS payload could read it.
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<AuthenticatedUser | null>(null);
+  const [user, setUser] = useState<AuthenticatedUser | null>(() => {
+    if (isDemoMode()) {
+      return {
+        id: 1,
+        name: "Demo Admin",
+        login_id: "admin",
+        role: "admin",
+        partner_id: null,
+      };
+    }
+    return null;
+  });
 
   const login = useCallback(async (loginId: string, password: string) => {
+    setDemoMode(false);
     const response = await api.post<LoginResponse>("/auth/login", {
       login_id: loginId,
       password,
@@ -86,11 +99,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const logout = useCallback(() => {
+    setDemoMode(false);
     setAuthToken(null);
     setUser(null);
   }, []);
 
-  const value = useMemo(() => ({ user, login, signup, logout }), [user, login, signup, logout]);
+  const loginDemo = useCallback(() => {
+    setDemoMode(true);
+    setUser({
+      id: 1,
+      name: "Demo Admin",
+      login_id: "admin",
+      role: "admin",
+      partner_id: null,
+    });
+  }, []);
+
+  const value = useMemo(
+    () => ({ user, login, signup, logout, loginDemo }),
+    [user, login, signup, logout, loginDemo],
+  );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

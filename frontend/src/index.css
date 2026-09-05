@@ -12,45 +12,51 @@ body {
 }
 
 /*
-  shadcn/ui primitives read these semantic CSS variables (--primary, --border, etc).
-  Values are pinned to the exact hex tokens in SPEC.md §13.1 — this file is the one
-  place they are translated into shadcn's variable scheme, so no component hardcodes
-  a hex value. See tailwind.config.js for the matching theme.extend.colors entries.
+  shadcn/ui primitives read these semantic CSS variables (--primary, --border,
+  etc). Values are pinned to the same Odoo-matched palette declared in
+  tailwind.config.js — this file is the one place they are translated into
+  shadcn's variable scheme, so no component hardcodes a hex value.
+
+  Deliberately NO GREEN in this palette: Odoo's UI doesn't use it, so states
+  that would normally be green (paid, achieved, balanced) use the muted
+  rose-plum "success" token instead.
 */
 @layer base {
   :root {
     --background: #ffffff;
-    --foreground: #1a1d23;
+    --foreground: #212529;
     --card: #ffffff;
-    --card-foreground: #1a1d23;
+    --card-foreground: #212529;
     --popover: #ffffff;
-    --popover-foreground: #1a1d23;
-    --primary: #7c2d55;
+    --popover-foreground: #212529;
+    --primary: #714b67;
     --primary-foreground: #ffffff;
-    --secondary: #f8f9fb;
-    --secondary-foreground: #1a1d23;
-    --muted: #f8f9fb;
-    --muted-foreground: #6b7280;
-    --accent: #3b82f6;
+    --secondary: #f8f9fa;
+    --secondary-foreground: #212529;
+    --muted: #f8f9fa;
+    --muted-foreground: #6c757d;
+    --accent: #017e84;
     --accent-foreground: #ffffff;
-    --destructive: #dc2626;
+    --destructive: #a94442;
     --destructive-foreground: #ffffff;
-    --border: #e2e5ea;
-    --input: #e2e5ea;
-    --ring: #7c2d55;
-    --radius: 0.5rem;
-    --chart-1: #7c2d55;
-    --chart-2: #3b82f6;
-    --chart-3: #16a34a;
-    --chart-4: #d97706;
-    --chart-5: #dc2626;
-    --sidebar: #f8f9fb;
-    --sidebar-foreground: #1a1d23;
-    --sidebar-primary: #7c2d55;
+    --border: #e0e0e0;
+    --input: #e0e0e0;
+    --ring: #714b67;
+    /* Modest rounding — Odoo is flat and square-ish, not heavily rounded. */
+    --radius: 0.25rem;
+    /* Chart series: plum family + teal + muted amber/red/grey. No green. */
+    --chart-1: #714b67;
+    --chart-2: #017e84;
+    --chart-3: #6c4f63;
+    --chart-4: #b08d57;
+    --chart-5: #adb5bd;
+    --sidebar: #f8f9fa;
+    --sidebar-foreground: #212529;
+    --sidebar-primary: #714b67;
     --sidebar-primary-foreground: #ffffff;
-    --sidebar-accent: #e2e5ea;
-    --sidebar-accent-foreground: #1a1d23;
-    --sidebar-border: #e2e5ea;
-    --sidebar-ring: #7c2d55;
+    --sidebar-accent: #e0e0e0;
+    --sidebar-accent-foreground: #212529;
+    --sidebar-border: #e0e0e0;
+    --sidebar-ring: #714b67;
   }
 }

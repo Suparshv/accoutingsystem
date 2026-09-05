@@ -35,7 +35,7 @@ export function KanbanGrid<T>({
         {Array.from({ length: 6 }).map((_, i) => (
           <div
             key={i}
-            className="h-28 animate-pulse rounded-lg border border-border bg-surface"
+            className="h-28 animate-pulse rounded border border-border bg-surface"
           />
         ))}
       </div>
@@ -44,7 +44,7 @@ export function KanbanGrid<T>({
 
   if (error) {
     return (
-      <div className="flex flex-col items-center gap-3 rounded-lg border border-border px-4 py-10 text-center">
+      <div className="flex flex-col items-center gap-3 rounded border border-border px-4 py-10 text-center">
         <p className="text-sm text-danger">{error.message}</p>
         {onRetry && (
           <Button type="button" variant="outline" size="sm" onClick={onRetry}>
@@ -58,7 +58,7 @@ export function KanbanGrid<T>({
 
   if (items.length === 0) {
     return (
-      <div className="rounded-lg border border-dashed border-border px-4 py-10 text-center text-sm text-text_secondary">
+      <div className="rounded border border-dashed border-border px-4 py-10 text-center text-sm text-text_secondary">
         {emptyMessage}
       </div>
     );
@@ -71,7 +71,7 @@ export function KanbanGrid<T>({
           key={getItemId(item)}
           onClick={() => onCardClick?.(item)}
           className={cn(
-            "rounded-lg border border-border bg-background p-4 shadow-sm transition-shadow hover:shadow-md",
+            "rounded border border-border bg-background p-4 transition-colors hover:bg-surface",
             onCardClick && "cursor-pointer",
           )}
         >

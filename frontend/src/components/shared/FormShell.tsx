@@ -72,7 +72,7 @@ export function FormShell({ title, state, actions, children, onBack }: FormShell
             <li key={step} className="flex items-center gap-2">
               <span
                 className={cn(
-                  "rounded-full px-3 py-1 font-medium",
+                  "rounded px-3 py-1 font-medium",
                   i === currentIndex
                     ? "bg-primary text-primary-foreground"
                     : "bg-surface text-text_secondary",
@@ -90,7 +90,7 @@ export function FormShell({ title, state, actions, children, onBack }: FormShell
         </ol>
       )}
 
-      <div className="rounded-lg border border-border bg-background p-5">{children}</div>
+      <div className="rounded border border-border bg-background p-5">{children}</div>
     </div>
   );
 }

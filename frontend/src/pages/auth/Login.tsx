@@ -16,7 +16,7 @@ const loginSchema = z.object({
 type LoginFormValues = z.infer<typeof loginSchema>;
 
 export default function Login() {
-  const { login } = useAuth();
+  const { login, loginDemo } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [formError, setFormError] = useState<string | null>(null);
@@ -46,7 +46,7 @@ export default function Login() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-surface px-4">
-      <div className="w-full max-w-sm rounded-lg border border-border bg-background p-6 shadow-sm">
+      <div className="w-full max-w-sm rounded border border-border bg-background p-6">
         <h1 className="text-xl font-semibold text-text_primary">Log in</h1>
         <p className="mt-1 text-sm text-text_secondary">Urban Furniture Accounting</p>
 
@@ -90,6 +90,27 @@ export default function Login() {
 
           <Button type="submit" disabled={isSubmitting} className="mt-2">
             {isSubmitting ? "Logging in..." : "Log in"}
+          </Button>
+
+          <div className="relative my-2">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t border-border" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-background px-2 text-text_secondary">or test without backend</span>
+            </div>
+          </div>
+
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full"
+            onClick={() => {
+              loginDemo();
+              navigate("/");
+            }}
+          >
+            Explore Pages in Demo Mode
           </Button>
         </form>
 

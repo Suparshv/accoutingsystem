@@ -70,7 +70,7 @@ export default function Signup() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-surface px-4">
-      <div className="w-full max-w-sm rounded-lg border border-border bg-background p-6 shadow-sm">
+      <div className="w-full max-w-sm rounded border border-border bg-background p-6">
         <h1 className="text-xl font-semibold text-text_primary">Create an account</h1>
         <p className="mt-1 text-sm text-text_secondary">Urban Furniture Accounting</p>
 
