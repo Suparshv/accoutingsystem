@@ -1,0 +1,56 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family:
+    Inter,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+}
+
+/*
+  shadcn/ui primitives read these semantic CSS variables (--primary, --border, etc).
+  Values are pinned to the exact hex tokens in SPEC.md §13.1 — this file is the one
+  place they are translated into shadcn's variable scheme, so no component hardcodes
+  a hex value. See tailwind.config.js for the matching theme.extend.colors entries.
+*/
+@layer base {
+  :root {
+    --background: #ffffff;
+    --foreground: #1a1d23;
+    --card: #ffffff;
+    --card-foreground: #1a1d23;
+    --popover: #ffffff;
+    --popover-foreground: #1a1d23;
+    --primary: #7c2d55;
+    --primary-foreground: #ffffff;
+    --secondary: #f8f9fb;
+    --secondary-foreground: #1a1d23;
+    --muted: #f8f9fb;
+    --muted-foreground: #6b7280;
+    --accent: #3b82f6;
+    --accent-foreground: #ffffff;
+    --destructive: #dc2626;
+    --destructive-foreground: #ffffff;
+    --border: #e2e5ea;
+    --input: #e2e5ea;
+    --ring: #7c2d55;
+    --radius: 0.5rem;
+    --chart-1: #7c2d55;
+    --chart-2: #3b82f6;
+    --chart-3: #16a34a;
+    --chart-4: #d97706;
+    --chart-5: #dc2626;
+    --sidebar: #f8f9fb;
+    --sidebar-foreground: #1a1d23;
+    --sidebar-primary: #7c2d55;
+    --sidebar-primary-foreground: #ffffff;
+    --sidebar-accent: #e2e5ea;
+    --sidebar-accent-foreground: #1a1d23;
+    --sidebar-border: #e2e5ea;
+    --sidebar-ring: #7c2d55;
+  }
+}
