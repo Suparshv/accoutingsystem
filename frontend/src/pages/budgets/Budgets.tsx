@@ -298,8 +298,28 @@ function BudgetForm({
             key: "amount_to_achieve",
             header: "To Achieve",
             align: "right" as const,
-            render: (row: DraftLine) =>
-              row.amount_to_achieve ? <MoneyDisplay value={row.amount_to_achieve} /> : "—",
+            // A negative here means the line is PAST its committed amount, and
+            // a bare "-₹23,000.00" was being read as a positive 23,000 — the
+            // minus is easy to miss beside a ₹, and it collided with the "—"
+            // this same table uses for "no value". So the sign is spelled out
+            // as a word instead of relying on one glyph.
+            //
+            // "over" rather than "overspent": for an expense line being over
+            // is bad, for an income line it means the target was beaten. The
+            // wording stays neutral because the column serves both.
+            render: (row: DraftLine) => {
+              if (!row.amount_to_achieve) return "—";
+              const over = Number(row.amount_to_achieve) < 0;
+              return (
+                <span className="whitespace-nowrap">
+                  <MoneyDisplay
+                    value={over ? row.amount_to_achieve.replace("-", "") : row.amount_to_achieve}
+                    className={over ? "text-danger" : undefined}
+                  />
+                  {over && <span className="ml-1 text-xs text-danger">over</span>}
+                </span>
+              );
+            },
           },
         ]
       : []),

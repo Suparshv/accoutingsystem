@@ -19,8 +19,22 @@ export function MoneyDisplay({ value, className }: MoneyDisplayProps) {
   const numeric = typeof value === "string" ? Number(value) : value;
   const formatted = Number.isFinite(numeric) ? inrFormatter.format(numeric) : "—";
 
+  // whitespace-nowrap is load-bearing, not cosmetic. Intl renders a negative
+  // as "-₹23,000.00" with the minus as its own leading glyph, so a narrow
+  // table cell wrapped straight after it and left the amount reading as
+  //
+  //     -
+  //     ₹23,000.00
+  //
+  // which looks like this table's own "no value" em-dash followed by a
+  // POSITIVE number — the exact opposite of the truth.
   return (
-    <span className={cn("font-medium tabular-nums text-text_primary", className)}>
+    <span
+      className={cn(
+        "whitespace-nowrap font-medium tabular-nums text-text_primary",
+        className,
+      )}
+    >
       {formatted}
     </span>
   );
