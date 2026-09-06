@@ -2,10 +2,11 @@ import { useEffect, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Plus } from "lucide-react";
+import { Plus, Trash2, Upload } from "lucide-react";
 import { DataTable, type DataTableColumn } from "@/components/shared/DataTable";
 import { KanbanGrid } from "@/components/shared/KanbanGrid";
 import { ViewSwitcher, type ViewMode } from "@/components/shared/ViewSwitcher";
+import { ContactAvatar } from "@/components/shared/ContactAvatar";
 import { FieldError } from "@/components/shared/FieldError";
 import { FormShell } from "@/components/shared/FormShell";
 import { Button } from "@/components/ui/button";
@@ -26,6 +27,10 @@ import { toast } from "@/hooks/use-toast";
 import type { Page, Partner, PartnerInput, PartnerType } from "@/types/api";
 
 const PAGE_SIZE = 20;
+
+// Mirrors core/uploads.py — same limits, same messages (SPEC.md §13.5).
+const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
+const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/jpg", "image/png"];
 
 const TYPE_LABELS: Record<PartnerType, string> = {
   customer: "Customer",
@@ -119,7 +124,16 @@ export default function Contacts() {
   const { data, loading, error, refetch } = useApi<Page<Partner>>(path, [path]);
 
   const columns: DataTableColumn<Partner>[] = [
-    { key: "name", header: "Name" },
+    {
+      key: "name",
+      header: "Name",
+      render: (row) => (
+        <span className="flex items-center gap-2.5">
+          <ContactAvatar name={row.name} imageUrl={row.image_url} />
+          <span>{row.name}</span>
+        </span>
+      ),
+    },
     { key: "email", header: "Email", render: (row) => row.email ?? "—" },
     { key: "phone", header: "Phone", render: (row) => row.phone ?? "—" },
     { key: "partner_type", header: "Type", render: (row) => TYPE_LABELS[row.partner_type] },
@@ -184,12 +198,17 @@ export default function Contacts() {
           onCardClick={(row) => setMode({ kind: "edit", partner: row })}
           emptyMessage="No contacts yet."
           renderCard={(row) => (
-            <div className="flex flex-col gap-1">
-              <p className="font-medium text-text_primary">{row.name}</p>
-              <p className="text-sm text-text_secondary">{row.email ?? "No email"}</p>
-              <p className="text-xs uppercase tracking-wide text-text_secondary">
-                {TYPE_LABELS[row.partner_type]}
-              </p>
+            <div className="flex items-start gap-3">
+              <ContactAvatar name={row.name} imageUrl={row.image_url} size="md" />
+              <div className="flex min-w-0 flex-col gap-1">
+                <p className="truncate font-medium text-text_primary">{row.name}</p>
+                <p className="truncate text-sm text-text_secondary">
+                  {row.email ?? "No email"}
+                </p>
+                <p className="text-xs uppercase tracking-wide text-text_secondary">
+                  {TYPE_LABELS[row.partner_type]}
+                </p>
+              </div>
             </div>
           )}
         />
@@ -218,16 +237,100 @@ function ContactForm({
     defaultValues: toFormValues(partner),
   });
 
+  // The picked file is held here and uploaded as part of Save, rather than
+  // the moment it is chosen. Two reasons: a brand-new contact has no id yet
+  // to upload against, and staging it means the whole form behaves the same
+  // way — nothing is persisted until you press Save, image included. The
+  // preview is a local object URL, so it costs no round trip.
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [imageError, setImageError] = useState<string | null>(null);
+  // Removing an existing photo is staged the same way as replacing one, so
+  // both follow the form's single rule: nothing is persisted until Save, and
+  // Cancel undoes it. The two are mutually exclusive — picking a file cancels
+  // a pending removal and vice versa.
+  const [imageRemoved, setImageRemoved] = useState(false);
+
+  const savedImageUrl = partner?.image_url ?? null;
+  const hasImage = Boolean(imageFile) || (Boolean(savedImageUrl) && !imageRemoved);
+
+  useEffect(() => {
+    if (!imageFile) {
+      setImagePreview(null);
+      return;
+    }
+    const url = URL.createObjectURL(imageFile);
+    setImagePreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [imageFile]);
+
+  function pickImage(file: File | null) {
+    setImageError(null);
+    setImageRemoved(false);
+    if (!file) {
+      setImageFile(null);
+      return;
+    }
+    if (!ACCEPTED_IMAGE_TYPES.includes(file.type)) {
+      setImageError("Choose a JPEG or PNG image");
+      setImageFile(null);
+      return;
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      setImageError("That image is larger than the 2 MB limit");
+      setImageFile(null);
+      return;
+    }
+    setImageFile(file);
+  }
+
+  /** Clear the photo: drops a staged file, and stages the saved one for
+   *  deletion if that is what is on screen. */
+  function clearImage() {
+    setImageError(null);
+    if (imageFile) {
+      setImageFile(null);
+      return;
+    }
+    if (savedImageUrl) setImageRemoved(true);
+  }
+
+  function undoRemoveImage() {
+    setImageRemoved(false);
+  }
+
   async function onSubmit(values: PartnerFormValues) {
     try {
       const body = toPartnerInput(values);
-      if (partner) {
-        await api.put<Partner>(`/partners/${partner.id}`, body);
-        toast({ title: "Contact updated" });
-      } else {
-        await api.post<Partner>("/partners", body);
-        toast({ title: "Contact created" });
+      const saved = partner
+        ? await api.put<Partner>(`/partners/${partner.id}`, body)
+        : await api.post<Partner>("/partners", body);
+
+      // A second call, and it can only happen after the first: a new contact
+      // has no id to act on until it exists. If this is the part that fails,
+      // the contact itself is already saved — so the message says exactly
+      // that rather than implying the whole save was lost.
+      if (imageFile || imageRemoved) {
+        try {
+          if (imageFile) {
+            await api.upload<Partner>(`/partners/${saved.id}/image`, imageFile);
+          } else {
+            await api.delete<Partner>(`/partners/${saved.id}/image`);
+          }
+        } catch (imageIssue) {
+          toast({
+            variant: "destructive",
+            title: imageFile
+              ? "Contact saved, but the photo was not uploaded"
+              : "Contact saved, but the photo was not removed",
+            description: normaliseError(imageIssue).message,
+          });
+          onSaved();
+          return;
+        }
       }
+
+      toast({ title: partner ? "Contact updated" : "Contact created" });
       onSaved();
     } catch (e) {
       const apiError = normaliseError(e);
@@ -252,6 +355,73 @@ function ContactForm({
       ]}
     >
       <form onSubmit={handleSubmit(onSubmit)} noValidate className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="flex items-center gap-4 sm:col-span-2">
+          {imagePreview ? (
+            <img
+              src={imagePreview}
+              alt=""
+              className="h-28 w-28 shrink-0 rounded-full border border-border object-cover"
+            />
+          ) : (
+            // A staged removal shows the initials placeholder immediately, so
+            // the button says what the record will look like after Save.
+            <ContactAvatar
+              name={partner?.name || "?"}
+              imageUrl={imageRemoved ? null : savedImageUrl}
+              size="lg"
+            />
+          )}
+
+          <div className="flex flex-col items-start gap-1.5">
+            <Label htmlFor="contact_image">Photo</Label>
+            {/* The native file input is replaced by a button, because its
+                default rendering cannot be styled and reads as unfinished
+                next to the rest of the form. */}
+            <input
+              id="contact_image"
+              type="file"
+              accept="image/jpeg,image/png"
+              className="sr-only"
+              onChange={(e) => pickImage(e.target.files?.[0] ?? null)}
+            />
+            <div className="flex items-center gap-2">
+              <Button type="button" variant="outline" size="sm" asChild>
+                <label htmlFor="contact_image" className="cursor-pointer">
+                  <Upload className="mr-2 h-4 w-4" />
+                  {hasImage ? "Replace photo" : "Upload photo"}
+                </label>
+              </Button>
+
+              {hasImage && (
+                <Button type="button" variant="ghost" size="sm" onClick={clearImage}>
+                  <Trash2 className="mr-2 h-4 w-4 text-danger" />
+                  {imageFile ? "Clear" : "Remove photo"}
+                </Button>
+              )}
+
+              {imageRemoved && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={undoRemoveImage}
+                >
+                  Undo
+                </Button>
+              )}
+            </div>
+
+            <p className="text-xs text-text_secondary">
+              {imageFile
+                ? `${imageFile.name} — uploads when you save`
+                : imageRemoved
+                  ? "Photo will be removed when you save"
+                  : "Optional. JPEG or PNG, up to 2 MB."}
+            </p>
+            <FieldError message={imageError} />
+          </div>
+        </div>
+
         <div className="sm:col-span-2">
           <Label htmlFor="name" required>Name</Label>
           <Input id="name" {...register("name")} />

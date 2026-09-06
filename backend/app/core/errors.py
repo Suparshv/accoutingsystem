@@ -172,6 +172,23 @@ class NotFoundError(AppError):
     message = "The requested resource does not exist."
 
 
+# --- upload errors (SPEC.md §5 UPLOAD_DIR, §17 P1) --------------------------
+
+
+class UnsupportedImageTypeError(AppError):
+    """The upload is not a JPEG or a PNG — by signature, not by its name."""
+
+    code = "UNSUPPORTED_IMAGE_TYPE"
+    status_code = 415
+    message = "Only JPEG and PNG images can be uploaded."
+
+
+class ImageTooLargeError(AppError):
+    code = "IMAGE_TOO_LARGE"
+    status_code = 413
+    message = "That image is larger than the 2 MB limit."
+
+
 class ConflictError(AppError):
     code = "IN_USE"
     status_code = 409

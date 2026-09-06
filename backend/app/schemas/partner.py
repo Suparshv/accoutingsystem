@@ -42,6 +42,11 @@ class PartnerOut(BaseModel):
     state: str | None
     country: str | None
     pincode: str | None
+    # Read-only, and absent from PartnerCreate/PartnerUpdate on purpose: the
+    # only way to set it is POST /partners/{id}/image, which validates the
+    # bytes. Accepting it in a JSON body would let a client point a contact at
+    # any path it liked (R6).
+    image_url: str | None = None
     is_active: bool
 
     model_config = ConfigDict(from_attributes=True)

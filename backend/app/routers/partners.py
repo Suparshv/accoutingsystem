@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, File, Query, UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -10,6 +10,7 @@ from app.core.deps import get_current_user, require_role
 from app.core.enums import PartnerType
 from app.core.errors import AppError
 from app.core.pagination import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, paginate
+from app.core.uploads import delete_image, save_image
 from app.core.search import ilike_any, like_pattern
 from app.database import get_db
 from app.models.partner import Partner
@@ -112,3 +113,61 @@ def delete_partner(
     partner = _get_active_partner(db, partner_id)
     partner.is_active = False
     db.commit()
+
+
+@router.post("/{partner_id}/image", response_model=PartnerOut)
+def upload_partner_image(
+    partner_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("admin", "accountant")),
+) -> Partner:
+    """Attach a profile image to a contact (SPEC.md §17 P1, image upload).
+
+    Same roles as PUT /partners/{id} — this is an edit to the contact, and no
+    weaker gate belongs on it just because the payload is a file.
+
+    Written only after save_image has accepted the bytes, so a rejected upload
+    leaves the previous image in place rather than clearing it. Replacing an
+    image unlinks the old file once the new row is committed: doing it earlier
+    would lose the old picture if the commit then failed.
+    """
+    partner = _get_active_partner(db, partner_id)
+    previous = partner.image_path
+
+    partner.image_path = save_image(file)
+    db.commit()
+    db.refresh(partner)
+
+    if previous and previous != partner.image_path:
+        delete_image(previous)
+    return partner
+
+
+@router.delete("/{partner_id}/image", response_model=PartnerOut)
+def delete_partner_image(
+    partner_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("admin", "accountant")),
+) -> Partner:
+    """Remove a contact's profile image (SPEC.md §17 P1, image upload).
+
+    Returns 200 with the updated contact rather than 204, so the caller can
+    render the cleared record straight from the response the way it does after
+    an upload.
+
+    Idempotent: clearing an image that is already absent is a success, not a
+    404. The endpoint's job is to leave the contact without a picture, and it
+    already is.
+    """
+    partner = _get_active_partner(db, partner_id)
+    previous = partner.image_path
+
+    partner.image_path = None
+    db.commit()
+    db.refresh(partner)
+
+    # Unlinked only after the row is committed: the other order would delete
+    # the file and then leave the column pointing at it if the commit failed.
+    delete_image(previous)
+    return partner

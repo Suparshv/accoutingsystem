@@ -37,8 +37,9 @@ class Partner(Base):
     state: Mapped[str | None] = mapped_column(String(100), nullable=True)
     country: Mapped[str | None] = mapped_column(String(100), nullable=True)
     pincode: Mapped[str | None] = mapped_column(String(10), nullable=True)
-    # P1 — file upload is out of scope for this slice; column reserved so the
-    # schema matches SPEC.md §7.3 without requiring upload plumbing now.
+    # Just the generated filename ("a1b2...f0.jpg"), never a path and never
+    # what the client called it — see core/uploads.py::save_image. Nullable and
+    # staying that way: a contact without a picture is the normal case.
     image_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -50,3 +51,14 @@ class Partner(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
+
+    @property
+    def image_url(self) -> str | None:
+        """The stored filename as a URL the browser can put in an <img src>.
+
+        Read by Pydantic's from_attributes, exactly like SalesOrder.customer_name.
+        Relative to the API base the frontend already holds
+        (VITE_API_BASE_URL = ".../api"), because main.py mounts the upload
+        directory at /api/uploads — so the client concatenates and is done.
+        """
+        return f"/uploads/{self.image_path}" if self.image_path else None

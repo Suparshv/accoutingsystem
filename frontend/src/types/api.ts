@@ -48,6 +48,14 @@ export type Partner = {
   state: string | null;
   country: string | null;
   pincode: string | null;
+  // Server-relative ("/uploads/abc.jpg"), null when none was ever uploaded.
+  // Read-only: set through POST /partners/{id}/image, never in a JSON body.
+  //
+  // Optional rather than `string | null` because it genuinely can be absent:
+  // the live API always sends it, but demo mode's fixtures in lib/mockData.ts
+  // predate the field. Every reader goes through assetUrl(), which treats
+  // undefined and null the same way.
+  image_url?: string | null;
   is_active: boolean;
 };
 
