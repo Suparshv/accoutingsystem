@@ -12,7 +12,7 @@ const MAIN_GROUPS: NavGroup[] = [
     label: null,
     items: [
       { label: "Dashboard", href: "/" },
-      { label: "Mock Showroom", href: "/dev/components" },
+      // { label: "Mock Showroom", href: "/dev/components" },
     ],
   },
   {

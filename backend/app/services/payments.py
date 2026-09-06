@@ -139,15 +139,21 @@ class PaymentHistoryLine:
     amount: Decimal
 
 
-def payment_history_for_invoice(db: Session, invoice_id: int) -> list[PaymentHistoryLine]:
+def payment_history_for_invoice(
+    db: Session, invoice_id: int
+) -> list[PaymentHistoryLine]:
     """CONFIRMED payments against one invoice, oldest first. Drafts never
     count — same rule as amount_paid_for_invoice, same reason (R5)."""
     rows = db.execute(
         select(Payment.payment_date, Payment.amount)
-        .where(Payment.invoice_id == invoice_id, Payment.state == PaymentState.CONFIRMED)
+        .where(
+            Payment.invoice_id == invoice_id, Payment.state == PaymentState.CONFIRMED
+        )
         .order_by(Payment.payment_date, Payment.id)
     ).all()
-    return [PaymentHistoryLine(date=row.payment_date, amount=row.amount) for row in rows]
+    return [
+        PaymentHistoryLine(date=row.payment_date, amount=row.amount) for row in rows
+    ]
 
 
 def payment_history_for_bill(db: Session, bill_id: int) -> list[PaymentHistoryLine]:
@@ -157,7 +163,9 @@ def payment_history_for_bill(db: Session, bill_id: int) -> list[PaymentHistoryLi
         .where(Payment.bill_id == bill_id, Payment.state == PaymentState.CONFIRMED)
         .order_by(Payment.payment_date, Payment.id)
     ).all()
-    return [PaymentHistoryLine(date=row.payment_date, amount=row.amount) for row in rows]
+    return [
+        PaymentHistoryLine(date=row.payment_date, amount=row.amount) for row in rows
+    ]
 
 
 def bill_payment_summary(db: Session, bill: VendorBill) -> PaymentSummary:

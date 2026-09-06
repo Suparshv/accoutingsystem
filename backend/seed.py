@@ -8,7 +8,9 @@ Run from backend/, after the database is up and initialised:
     python seed.py
 
 THE STORY (for the hackathon walkthrough): Urban Furniture, a furniture
-trading business, across Q1 2026 (Jan-Mar). Revenue grows every month.
+trading business, across Q1 2026 (Jan-Mar) plus an April continuation into
+Q2, so the dataset does not look like it stopped dead at the quarter end.
+Revenue grows every month.
 Purchase volume grows to match. March carries a one-off equipment-repair
 expense, so its margin is a little tighter than February's even though it
 is the best revenue month of the quarter. Three Q1 budgets tell three
@@ -620,6 +622,80 @@ SALES_SPECS = [
         "draft_so",
         [("Office Desk", 4)],
     ),
+    # --- April: the quarter's growth continues into Q2, so the demo does not
+    # look like a dataset that stopped dead on 31 March. Same shape as the
+    # months above: most run the full cycle, one is left mid-flow.
+    (
+        "A-SO1",
+        4,
+        3,
+        "Priya Enterprises",
+        "General Operations",
+        "full",
+        [("Dining Table", 5), ("Chair", 10)],
+    ),
+    (
+        "A-SO2",
+        4,
+        7,
+        "Metro Interiors",
+        "Showroom Expansion",
+        "full",
+        [("Sofa Set", 3)],
+    ),
+    # Mr Rahul's first CONFIRMED invoice. Every invoice of his before this one
+    # is a draft, so the portal walkthrough (rahulcust) had nothing payable on
+    # it at all — no partial, no outstanding balance, nothing to click Pay on.
+    (
+        "A-SO3",
+        4,
+        10,
+        "Mr Rahul",
+        "General Operations",
+        "full",
+        [("Wardrobe", 2), ("Bed", 1), ("Delivery Service", 2)],
+    ),
+    (
+        "A-SO4",
+        4,
+        14,
+        "Coastal Furniture Traders",
+        "Online Store Launch",
+        "full",
+        [("Refrigerator", 3), ("Washing Machine", 1)],
+    ),
+    (
+        "A-SO5",
+        4,
+        20,
+        "Nimesh Pathak",
+        "General Operations",
+        "full",
+        [("Office Desk", 5), ("Assembly Service", 5)],
+    ),
+    # Rahul's second confirmed invoice, deliberately left out of
+    # INVOICE_PAYMENT_SPECS. With A-SO3 (partial) and his three drafts, the
+    # portal then shows all three states a contact can actually be in:
+    # awaiting confirmation, partially paid, and confirmed-but-untouched —
+    # the last being the only one that offers a full-balance Pay button.
+    (
+        "A-SO7",
+        4,
+        24,
+        "Mr Rahul",
+        "General Operations",
+        "full",
+        [("Bookshelf", 2), ("Assembly Service", 3)],
+    ),
+    (
+        "A-SO6",
+        4,
+        27,
+        "Anita Verma",
+        "General Operations",
+        "draft_invoice",
+        [("Air Conditioner", 2), ("Installation Service", 2)],
+    ),
 ]
 
 
@@ -629,7 +705,7 @@ def seed_sales_cycle(
     products: dict[str, Product],
     analytics: dict[str, AnalyticAccount],
 ) -> dict[str, CustomerInvoice]:
-    """18 sales orders across Jan-Mar 2026 (§14): most run the full
+    """25 sales orders across Jan-Apr 2026 (§14): most run the full
     order -> invoice -> confirm cycle; a few are deliberately left mid-flow
     (draft invoice, or draft order never invoiced) so the demo shows the
     system's states, not just finished work.
@@ -862,6 +938,70 @@ PURCHASE_SPECS = [
         "draft_bill",
         [("Sofa Set", 2, "16500.00")],
     ),
+    # --- April: the purchase side of the Q2 continuation.
+    #
+    # Every April line is tagged "General Operations" deliberately. The three
+    # Q1 budgets measure 01 Jan - 31 Mar, so an April bill tagged (say) Online
+    # Store Launch would contribute 0.00 to it and read as a bug to anyone
+    # comparing the two screens. The date filter is already covered by its own
+    # §10.7 scenario; the demo data does not need to re-litigate it.
+    (
+        "PA1",
+        4,
+        2,
+        "Sharma Timber Co",
+        "General Operations",
+        "full",
+        [("Dining Table", 6, "5500.00"), ("Chair", 12, "1700.00")],
+    ),
+    (
+        "PA2",
+        4,
+        6,
+        "Gupta Hardware Supplies",
+        "General Operations",
+        "full",
+        [("Sofa Set", 2, "16500.00")],
+    ),
+    # Mr Rahul is a "both" contact — customer AND vendor — but nothing in the
+    # dataset ever bought from him, so the portal's My Bills page was empty.
+    # Real products with real product_ids, not a typed-in description.
+    (
+        "PA3",
+        4,
+        9,
+        "Mr Rahul",
+        "General Operations",
+        "full",
+        [("Bookshelf", 3, "4000.00"), ("Delivery Service", 2, "950.00")],
+    ),
+    (
+        "PA4",
+        4,
+        13,
+        "Open Wood Furnishings",
+        "General Operations",
+        "full",
+        [("Refrigerator", 2, "21000.00")],
+    ),
+    (
+        "PA5",
+        4,
+        21,
+        "Gupta Hardware Supplies",
+        "General Operations",
+        "full",
+        [("Office Desk", 2, "6500.00")],
+    ),
+    (
+        "PA6",
+        4,
+        28,
+        "Sharma Timber Co",
+        "General Operations",
+        "draft_bill",
+        [("Bed", 2, "11000.00")],
+    ),
 ]
 
 
@@ -871,7 +1011,7 @@ def seed_purchase_cycle(
     products: dict[str, Product],
     analytics: dict[str, AnalyticAccount],
 ) -> dict[str, VendorBill]:
-    """17 purchase orders across Jan-Mar 2026 (§14): most run the full
+    """23 purchase orders across Jan-Apr 2026 (§14): most run the full
     order -> bill -> confirm cycle; a few are deliberately left mid-flow
     (draft bill, or draft order never billed), the same principle as the
     sales cycle.
@@ -1072,7 +1212,14 @@ INVOICE_PAYMENT_SPECS = [
     ("J-SO2", "partial", "24000.00"),
     ("F-SO1", "partial", "40000.00"),
     ("M-SO2", "partial", "50000.00"),
-    # J-SO3, F-SO3, F-SO4, M-SO3 stay not_paid.
+    # --- April ---
+    ("A-SO1", "full", None),
+    ("A-SO4", "full", None),
+    ("A-SO2", "partial", "30000.00"),
+    # Mr Rahul, partially settled: this is what gives the portal walkthrough a
+    # confirmed invoice with a real outstanding balance to pay against.
+    ("A-SO3", "partial", "20000.00"),
+    # J-SO3, F-SO3, F-SO4, M-SO3 and A-SO5 stay not_paid.
 ]
 
 BILL_PAYMENT_SPECS = [
@@ -1085,7 +1232,14 @@ BILL_PAYMENT_SPECS = [
     ("PM1", "partial", "20000.00"),
     ("PM2", "partial", "40000.00"),
     ("PM4", "partial", "40000.00"),
-    # PJ3, PF3, PF6, PM3 stay not_paid.
+    # --- April ---
+    ("PA1", "full", None),
+    ("PA4", "full", None),
+    ("PA2", "partial", "15000.00"),
+    # Mr Rahul as a vendor, partially paid — so his My Bills page shows a
+    # balance rather than a row that is either untouched or already closed.
+    ("PA3", "partial", "5000.00"),
+    # PJ3, PF3, PF6, PM3, PA5 stay not_paid.
 ]
 
 
@@ -1229,11 +1383,11 @@ def main() -> None:
             seed_manual_expenses(db, accounts, journals)
             db.commit()
 
-            print("Seeding the sales cycle (Jan-Mar 2026)...")
+            print("Seeding the sales cycle (Jan-Apr 2026)...")
             invoices = seed_sales_cycle(db, partners, products, analytics)
             db.commit()
 
-            print("Seeding the purchase cycle (Jan-Mar 2026)...")
+            print("Seeding the purchase cycle (Jan-Apr 2026)...")
             bills = seed_purchase_cycle(db, partners, products, analytics)
             db.commit()
 
