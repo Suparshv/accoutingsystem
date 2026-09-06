@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Plus } from "lucide-react";
 import { DataTable, type DataTableColumn } from "@/components/shared/DataTable";
+import { FieldError } from "@/components/shared/FieldError";
 import { FormShell } from "@/components/shared/FormShell";
 import { LineItemsTable, type LineItemColumn } from "@/components/shared/LineItemsTable";
 import { MoneyDisplay } from "@/components/shared/MoneyDisplay";
@@ -17,8 +18,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useApi } from "@/hooks/useApi";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { api, normaliseError } from "@/lib/api";
 import { toast } from "@/hooks/use-toast";
+import { hasErrors, requiredErrors } from "@/lib/validation";
 import type {
   AnalyticAccount,
   Budget,
@@ -59,15 +62,12 @@ export default function Budgets() {
   const [mode, setMode] = useState<Mode>({ kind: "list" });
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState("");
-  const [search, setSearch] = useState("");
+  const search = useDebouncedValue(searchInput);
 
+  // A new search term is a new result set, so it starts at page 1 again.
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setSearch(searchInput);
-      setPage(1);
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [searchInput]);
+    setPage(1);
+  }, [search]);
 
   const query = new URLSearchParams({ page: String(page), page_size: String(PAGE_SIZE) });
   if (search) query.set("search", search);
@@ -173,6 +173,24 @@ function BudgetForm({
   const [responsibleId, setResponsibleId] = useState(NO_RESPONSIBLE);
   const [lines, setLines] = useState<DraftLine[]>([{ ...BLANK_LINE }]);
   const [busy, setBusy] = useState(false);
+  // Errors stay hidden until the first save attempt, so a blank new budget is
+  // not red before it has been touched.
+  const [showErrors, setShowErrors] = useState(false);
+
+  const errors = requiredErrors({
+    budget_name: [name, "Name"],
+    start_date: [startDate, "Start date"],
+    end_date: [endDate, "End date"],
+  });
+  // Mirrors ck_budgets_dates_ordered — the server rejects it either way, but
+  // saying so here names the field instead of raising a toast.
+  if (startDate && endDate && endDate < startDate) {
+    errors.end_date = "End date must be on or after the start date";
+  }
+  if (lines.every((line) => !line.analytic_account_id)) {
+    errors.lines = "At least one line with an analytic account is required";
+  }
+  const fieldError = (name: string) => (showErrors ? errors[name] : undefined);
 
   useEffect(() => {
     if (!budget) return;
@@ -348,13 +366,16 @@ function BudgetForm({
           {
             label: "Save",
             variant: "outline" as const,
-            disabled: busy || !name.trim(),
-            onClick: () =>
+            disabled: busy,
+            onClick: () => {
+              setShowErrors(true);
+              if (hasErrors(errors)) return;
               run("Budget saved", () =>
                 budget
                   ? api.put(`/budgets/${budget.id}`, toBody())
                   : api.post("/budgets", toBody()),
-              ),
+              );
+            },
           },
         ]
       : []),
@@ -418,17 +439,22 @@ function BudgetForm({
       <div className="flex flex-col gap-6">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div>
-            <Label htmlFor="budget_name">Name</Label>
+            <Label htmlFor="budget_name" required>
+              Name
+            </Label>
             <Input
               id="budget_name"
               value={name}
               disabled={!isDraft}
               onChange={(e) => setName(e.target.value)}
             />
+            <FieldError message={fieldError("budget_name")} />
           </div>
 
           <div>
-            <Label htmlFor="start_date">Start Date</Label>
+            <Label htmlFor="start_date" required>
+              Start Date
+            </Label>
             <Input
               id="start_date"
               type="date"
@@ -436,10 +462,13 @@ function BudgetForm({
               disabled={!isDraft}
               onChange={(e) => setStartDate(e.target.value)}
             />
+            <FieldError message={fieldError("start_date")} />
           </div>
 
           <div>
-            <Label htmlFor="end_date">End Date</Label>
+            <Label htmlFor="end_date" required>
+              End Date
+            </Label>
             <Input
               id="end_date"
               type="date"
@@ -447,6 +476,7 @@ function BudgetForm({
               disabled={!isDraft}
               onChange={(e) => setEndDate(e.target.value)}
             />
+            <FieldError message={fieldError("end_date")} />
           </div>
 
           <div>
@@ -503,7 +533,9 @@ function BudgetForm({
           addLabel="Add budget line"
           onAddRow={() => setLines((prev) => [...prev, { ...BLANK_LINE }])}
           onRemoveRow={(index) => setLines((prev) => prev.filter((_, i) => i !== index))}
+          readOnly={!isDraft}
         />
+        <FieldError message={fieldError("lines")} />
 
         {!showsAchievement && budget && (
           <p className="text-xs text-text_secondary">

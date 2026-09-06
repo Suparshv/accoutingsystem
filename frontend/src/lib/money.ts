@@ -37,3 +37,29 @@ export function fromMinorUnits(minor: number): string {
 export function sumMinorUnits(values: string[]): number {
   return values.reduce((total, value) => total + toMinorUnits(value), 0);
 }
+
+/**
+ * quantity x unit price, in paise, exactly.
+ *
+ * The second place the UI genuinely has to do money arithmetic: a line total
+ * that only appears after a round-trip reads as a broken field, so the
+ * document forms show it live while you type. Still never a float — both
+ * operands are parsed to exact hundredths (quantity and unit_price are both
+ * NUMERIC(14,2)), multiplied as integers, then divided back down.
+ *
+ * The product of two 2-dp numbers has 4 dp, so the last two must be rounded
+ * away. Rounds half away from zero, matching
+ * services/{sales,purchase}.py::compute_line_total — the server recomputes
+ * this on save (R6) and its answer is the one that is stored, so the two must
+ * not disagree by a paise.
+ */
+export function multiplyMinorUnits(quantity: string, unitPrice: string): number {
+  const centiPaise = toMinorUnits(quantity) * toMinorUnits(unitPrice);
+  const sign = centiPaise < 0 ? -1 : 1;
+  return sign * Math.round(Math.abs(centiPaise) / 100);
+}
+
+/** quantity x unit price as a money string, ready for MoneyDisplay. */
+export function lineTotalOf(quantity: string, unitPrice: string): string {
+  return fromMinorUnits(multiplyMinorUnits(quantity, unitPrice));
+}

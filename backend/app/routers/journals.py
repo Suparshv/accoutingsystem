@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.core.deps import require_role
 from app.core.enums import JournalType
 from app.core.errors import NotFoundError
+from app.core.search import ilike_any, like_pattern
 from app.database import get_db
 from app.models.account import Account, Journal
 from app.models.user import User
@@ -29,7 +30,7 @@ def list_journals(
     if journal_type is not None:
         stmt = stmt.where(Journal.journal_type == journal_type)
     if search:
-        stmt = stmt.where(Journal.name.ilike(f"%{search}%"))
+        stmt = stmt.where(ilike_any(like_pattern(search), Journal.name))
 
     total = db.execute(select(func.count()).select_from(stmt.subquery())).scalar_one()
 

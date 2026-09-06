@@ -6,11 +6,13 @@ import { Plus } from "lucide-react";
 import { DataTable, type DataTableColumn } from "@/components/shared/DataTable";
 import { KanbanGrid } from "@/components/shared/KanbanGrid";
 import { ViewSwitcher, type ViewMode } from "@/components/shared/ViewSwitcher";
+import { FieldError } from "@/components/shared/FieldError";
 import { FormShell } from "@/components/shared/FormShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useApi } from "@/hooks/useApi";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { api, normaliseError } from "@/lib/api";
 import { applyServerErrors } from "@/lib/form-errors";
 import { toast } from "@/hooks/use-toast";
@@ -30,16 +32,13 @@ export default function Analytics() {
   const [mode, setMode] = useState<Mode>({ kind: "list" });
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState("");
-  const [search, setSearch] = useState("");
+  const search = useDebouncedValue(searchInput);
   const [viewMode, setViewMode] = useState<ViewMode>("list");
 
+  // A new search term is a new result set, so it starts at page 1 again.
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setSearch(searchInput);
-      setPage(1);
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [searchInput]);
+    setPage(1);
+  }, [search]);
 
   const query = new URLSearchParams({ page: String(page), page_size: String(PAGE_SIZE) });
   if (search) query.set("search", search);
@@ -172,9 +171,9 @@ function AnalyticForm({
       ]}
     >
       <form onSubmit={handleSubmit(onSubmit)} noValidate className="max-w-sm">
-        <Label htmlFor="name">Name</Label>
+        <Label htmlFor="name" required>Name</Label>
         <Input id="name" {...register("name")} />
-        {errors.name && <p className="mt-1 text-xs text-danger">{errors.name.message}</p>}
+        <FieldError message={errors.name?.message} />
       </form>
     </FormShell>
   );

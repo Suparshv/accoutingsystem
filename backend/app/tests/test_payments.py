@@ -7,7 +7,7 @@ field that can drift out of step with the payments themselves.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
@@ -369,3 +369,84 @@ def test_a_payment_needs_exactly_one_target(db, purchase_ledger):
             amount=Decimal("10.00"),
             payment_date=JANUARY,
         )
+
+
+# --- payment date vs the document it settles --------------------------------
+#
+# Not in §10.6's scenario list. payment_date becomes the journal entry's
+# entry_date (§8.2 payment mapping), so a payment dated before the document it
+# settles posts to the ledger in a period where nothing was owed — the trial
+# balance for that period shows a payment against a debt that does not exist
+# yet. Rejected at registration, before anything reaches the ledger.
+
+
+def test_a_payment_cannot_predate_the_bill_it_settles(db, purchase_ledger):
+    bill = _confirmed_bill(db, purchase_ledger, "6000.00")
+    journal = _bank_journal(db, purchase_ledger)
+
+    with pytest.raises(AppError) as excinfo:
+        payments_service.register_payment(
+            db,
+            payment_type=PaymentType.SEND,
+            partner_id=purchase_ledger["partner_id"],
+            journal_id=journal.id,
+            amount=Decimal("6000.00"),
+            payment_date=JANUARY - timedelta(days=1),
+            bill_id=bill.id,
+        )
+
+    assert excinfo.value.code == "PAYMENT_BEFORE_DOCUMENT"
+    assert excinfo.value.status_code == 422
+    assert excinfo.value.details["document_date"] == JANUARY.isoformat()
+
+
+def test_a_payment_on_the_bill_date_itself_is_accepted(db, purchase_ledger):
+    """The boundary is >=, not >. Paying the day it is raised is normal."""
+    bill = _confirmed_bill(db, purchase_ledger, "6000.00")
+    journal = _bank_journal(db, purchase_ledger)
+
+    payment = payments_service.register_payment(
+        db,
+        payment_type=PaymentType.SEND,
+        partner_id=purchase_ledger["partner_id"],
+        journal_id=journal.id,
+        amount=Decimal("6000.00"),
+        payment_date=JANUARY,
+        bill_id=bill.id,
+    )
+
+    assert payment.state is PaymentState.DRAFT
+
+
+def test_a_later_payment_date_is_accepted(db, purchase_ledger):
+    bill = _confirmed_bill(db, purchase_ledger, "6000.00")
+    journal = _bank_journal(db, purchase_ledger)
+
+    payment = payments_service.register_payment(
+        db,
+        payment_type=PaymentType.SEND,
+        partner_id=purchase_ledger["partner_id"],
+        journal_id=journal.id,
+        amount=Decimal("6000.00"),
+        payment_date=JANUARY + timedelta(days=30),
+        bill_id=bill.id,
+    )
+    payments_service.confirm_payment(db, payment)
+
+    entry = db.get(JournalEntry, payment.journal_entry_id)
+    assert entry.entry_date == JANUARY + timedelta(days=30)
+
+
+# --- line total rounding ----------------------------------------------------
+
+
+def test_both_cycles_round_a_half_paise_tie_the_same_way():
+    """The forms show this product live while you type (lib/money.ts), so the
+    two services must not settle a tie in opposite directions.
+    """
+    from app.services import sales as sales_service
+
+    quantity, unit_price = Decimal("1.50"), Decimal("0.01")
+
+    assert purchase_service.compute_line_total(quantity, unit_price) == Decimal("0.02")
+    assert sales_service.compute_line_total(quantity, unit_price) == Decimal("0.02")

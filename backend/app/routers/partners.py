@@ -10,6 +10,7 @@ from app.core.deps import get_current_user, require_role
 from app.core.enums import PartnerType
 from app.core.errors import AppError
 from app.core.pagination import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, paginate
+from app.core.search import ilike_any, like_pattern
 from app.database import get_db
 from app.models.partner import Partner
 from app.models.user import User
@@ -49,7 +50,9 @@ def list_partners(
 ) -> Page[PartnerOut]:
     stmt = select(Partner).where(Partner.is_active.is_(True))
     if search:
-        stmt = stmt.where(Partner.name.ilike(f"%{search}%"))
+        stmt = stmt.where(
+            ilike_any(like_pattern(search), Partner.name, Partner.email, Partner.phone)
+        )
     if partner_type is not None:
         stmt = stmt.where(Partner.partner_type == partner_type)
     # id tiebreaker: created_at alone isn't unique (rows from one bulk

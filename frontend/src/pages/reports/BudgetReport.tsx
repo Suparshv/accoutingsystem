@@ -64,8 +64,6 @@ export default function BudgetReport() {
           pageSize={rows.length || 20}
           total={data?.total ?? rows.length}
           onPageChange={() => {}}
-          searchValue=""
-          onSearchChange={() => {}}
           onRetry={refetch}
           getRowId={(row) => row.budget_id}
           emptyMessage="No confirmed budgets yet — confirm a budget to see its achievement."

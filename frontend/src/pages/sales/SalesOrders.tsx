@@ -2,10 +2,12 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Plus } from "lucide-react";
 import { DataTable, type DataTableColumn } from "@/components/shared/DataTable";
+import { FieldError } from "@/components/shared/FieldError";
 import { FormShell } from "@/components/shared/FormShell";
 import { LineItemsTable, type LineItemColumn } from "@/components/shared/LineItemsTable";
 import { MoneyDisplay } from "@/components/shared/MoneyDisplay";
 import { MoneyInput } from "@/components/shared/MoneyInput";
+import { QuantityInput } from "@/components/shared/QuantityInput";
 import { StatusBadge, type Status } from "@/components/shared/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,8 +20,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useApi } from "@/hooks/useApi";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { api, normaliseError } from "@/lib/api";
+import { lineTotalOf } from "@/lib/money";
 import { toast } from "@/hooks/use-toast";
+import { hasErrors, requiredErrors } from "@/lib/validation";
 import type {
   AnalyticAccount,
   Page,
@@ -37,7 +42,6 @@ type DraftLine = {
   analytic_account_id: string;
   quantity: string;
   unit_price: string;
-  line_total: string;
 };
 
 const BLANK_LINE: DraftLine = {
@@ -45,7 +49,6 @@ const BLANK_LINE: DraftLine = {
   analytic_account_id: NO_ANALYTIC,
   quantity: "1",
   unit_price: "0.00",
-  line_total: "0.00",
 };
 
 function today(): string {
@@ -58,15 +61,12 @@ export default function SalesOrders() {
   const [mode, setMode] = useState<Mode>({ kind: "list" });
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState("");
-  const [search, setSearch] = useState("");
+  const search = useDebouncedValue(searchInput);
 
+  // A new search term is a new result set, so it starts at page 1 again.
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setSearch(searchInput);
-      setPage(1);
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [searchInput]);
+    setPage(1);
+  }, [search]);
 
   const query = new URLSearchParams({ page: String(page), page_size: String(PAGE_SIZE) });
   if (search) query.set("search", search);
@@ -169,6 +169,18 @@ function SalesOrderForm({
   const [orderDate, setOrderDate] = useState(today());
   const [lines, setLines] = useState<DraftLine[]>([{ ...BLANK_LINE }]);
   const [busy, setBusy] = useState(false);
+  // Errors stay hidden until the first save attempt, so a blank new order is
+  // not red before it has been touched.
+  const [showErrors, setShowErrors] = useState(false);
+
+  const errors = requiredErrors({
+    customer_id: [customerId, "Customer"],
+    order_date: [orderDate, "Order date"],
+  });
+  if (lines.every((line) => !line.product_id)) {
+    errors.lines = "At least one line with a product is required";
+  }
+  const fieldError = (name: string) => (showErrors ? errors[name] : undefined);
 
   // Hydrate the form once the document arrives.
   useEffect(() => {
@@ -183,7 +195,6 @@ function SalesOrderForm({
           : NO_ANALYTIC,
         quantity: line.quantity,
         unit_price: line.unit_price,
-        line_total: line.line_total,
       })),
     );
   }, [order]);
@@ -193,6 +204,12 @@ function SalesOrderForm({
   function updateLine(index: number, patch: Partial<DraftLine>) {
     setLines((prev) => prev.map((line, i) => (i === index ? { ...line, ...patch } : line)));
   }
+
+  // Derived on every render, never stored: this is what makes the line
+  // total and the footer total follow a quantity edit, a price edit, an
+  // added row and a removed row without anything having to remember to
+  // recompute them. The server recomputes it again on save (R6).
+  const lineTotal = (row: DraftLine) => lineTotalOf(row.quantity, row.unit_price);
 
   const columns: LineItemColumn<DraftLine>[] = [
     {
@@ -253,12 +270,10 @@ function SalesOrderForm({
       header: "Qty",
       align: "right",
       render: (row, index) => (
-        <Input
+        <QuantityInput
           value={row.quantity}
           disabled={!isDraft}
-          inputMode="decimal"
-          className="w-20 text-right tabular-nums"
-          onChange={(e) => updateLine(index, { quantity: e.target.value })}
+          onChange={(value) => updateLine(index, { quantity: value })}
         />
       ),
     },
@@ -278,7 +293,7 @@ function SalesOrderForm({
       key: "line_total",
       header: "Line Total",
       align: "right",
-      render: (row) => <MoneyDisplay value={row.line_total} />,
+      render: (row) => <MoneyDisplay value={lineTotal(row)} />,
     },
   ];
 
@@ -344,13 +359,16 @@ function SalesOrderForm({
           {
             label: "Save",
             variant: "outline" as const,
-            disabled: busy || !customerId,
-            onClick: () =>
+            disabled: busy,
+            onClick: () => {
+              setShowErrors(true);
+              if (hasErrors(errors)) return;
               run("Sales order saved", () =>
                 order
                   ? api.put(`/sales-orders/${order.id}`, toBody())
                   : api.post("/sales-orders", toBody()),
-              ),
+              );
+            },
           },
         ]
       : []),
@@ -409,7 +427,9 @@ function SalesOrderForm({
       <div className="flex flex-col gap-6">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <Label htmlFor="customer_id">Customer</Label>
+            <Label htmlFor="customer_id" required>
+              Customer
+            </Label>
             <Select value={customerId} onValueChange={setCustomerId} disabled={!isDraft}>
               <SelectTrigger id="customer_id">
                 <SelectValue placeholder="Select customer" />
@@ -422,10 +442,13 @@ function SalesOrderForm({
                 ))}
               </SelectContent>
             </Select>
+            <FieldError message={fieldError("customer_id")} />
           </div>
 
           <div>
-            <Label htmlFor="order_date">Order Date</Label>
+            <Label htmlFor="order_date" required>
+              Order Date
+            </Label>
             <Input
               id="order_date"
               type="date"
@@ -433,17 +456,20 @@ function SalesOrderForm({
               disabled={!isDraft}
               onChange={(e) => setOrderDate(e.target.value)}
             />
+            <FieldError message={fieldError("order_date")} />
           </div>
         </div>
 
         <LineItemsTable
           rows={lines}
           columns={columns}
-          getLineTotal={(row) => row.line_total}
+          getLineTotal={lineTotal}
           addLabel="Add line"
           onAddRow={() => setLines((prev) => [...prev, { ...BLANK_LINE }])}
           onRemoveRow={(index) => setLines((prev) => prev.filter((_, i) => i !== index))}
+          readOnly={!isDraft}
         />
+        <FieldError message={fieldError("lines")} />
 
         <p className="text-xs text-text_secondary">
           Totals update automatically when you save.

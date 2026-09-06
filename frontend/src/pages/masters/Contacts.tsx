@@ -6,6 +6,7 @@ import { Plus } from "lucide-react";
 import { DataTable, type DataTableColumn } from "@/components/shared/DataTable";
 import { KanbanGrid } from "@/components/shared/KanbanGrid";
 import { ViewSwitcher, type ViewMode } from "@/components/shared/ViewSwitcher";
+import { FieldError } from "@/components/shared/FieldError";
 import { FormShell } from "@/components/shared/FormShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,6 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useApi } from "@/hooks/useApi";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { api, normaliseError } from "@/lib/api";
 import { applyServerErrors } from "@/lib/form-errors";
 import { toast } from "@/hooks/use-toast";
@@ -102,17 +104,13 @@ export default function Contacts() {
   const [mode, setMode] = useState<Mode>({ kind: "list" });
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState("");
-  const [search, setSearch] = useState("");
+  const search = useDebouncedValue(searchInput);
   const [viewMode, setViewMode] = useState<ViewMode>("list");
 
-  // Debounce the search box so every keystroke doesn't fire a request.
+  // A new search term is a new result set, so it starts at page 1 again.
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setSearch(searchInput);
-      setPage(1);
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [searchInput]);
+    setPage(1);
+  }, [search]);
 
   const query = new URLSearchParams({ page: String(page), page_size: String(PAGE_SIZE) });
   if (search) query.set("search", search);
@@ -255,25 +253,25 @@ function ContactForm({
     >
       <form onSubmit={handleSubmit(onSubmit)} noValidate className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="sm:col-span-2">
-          <Label htmlFor="name">Name</Label>
+          <Label htmlFor="name" required>Name</Label>
           <Input id="name" {...register("name")} />
-          {errors.name && <p className="mt-1 text-xs text-danger">{errors.name.message}</p>}
+          <FieldError message={errors.name?.message} />
         </div>
 
         <div>
           <Label htmlFor="email">Email</Label>
           <Input id="email" type="email" {...register("email")} />
-          {errors.email && <p className="mt-1 text-xs text-danger">{errors.email.message}</p>}
+          <FieldError message={errors.email?.message} />
         </div>
 
         <div>
           <Label htmlFor="phone">Phone</Label>
           <Input id="phone" {...register("phone")} />
-          {errors.phone && <p className="mt-1 text-xs text-danger">{errors.phone.message}</p>}
+          <FieldError message={errors.phone?.message} />
         </div>
 
         <div>
-          <Label htmlFor="partner_type">Type</Label>
+          <Label htmlFor="partner_type" required>Type</Label>
           <Controller
             control={control}
             name="partner_type"
@@ -290,12 +288,13 @@ function ContactForm({
               </Select>
             )}
           />
+          <FieldError message={errors.partner_type?.message} />
         </div>
 
         <div>
           <Label htmlFor="pincode">Pincode</Label>
           <Input id="pincode" {...register("pincode")} />
-          {errors.pincode && <p className="mt-1 text-xs text-danger">{errors.pincode.message}</p>}
+          <FieldError message={errors.pincode?.message} />
         </div>
 
         <div className="sm:col-span-2">

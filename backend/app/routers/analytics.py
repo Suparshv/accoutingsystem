@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.core.deps import get_current_user, require_role
 from app.core.errors import AppError
 from app.core.pagination import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, paginate
+from app.core.search import ilike_any, like_pattern
 from app.database import get_db
 from app.models.analytic import AnalyticAccount
 from app.models.user import User
@@ -55,7 +56,7 @@ def list_analytic_accounts(
 ) -> Page[AnalyticAccountOut]:
     stmt = select(AnalyticAccount).where(AnalyticAccount.is_active.is_(True))
     if search:
-        stmt = stmt.where(AnalyticAccount.name.ilike(f"%{search}%"))
+        stmt = stmt.where(ilike_any(like_pattern(search), AnalyticAccount.name))
     # id tiebreaker: created_at alone isn't unique (rows from one bulk
     # transaction share a timestamp), which lets LIMIT/OFFSET pagination
     # duplicate/skip rows across pages — see routers/sales_orders.py.

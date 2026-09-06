@@ -6,6 +6,7 @@ import { Plus } from "lucide-react";
 import { DataTable, type DataTableColumn } from "@/components/shared/DataTable";
 import { KanbanGrid } from "@/components/shared/KanbanGrid";
 import { ViewSwitcher, type ViewMode } from "@/components/shared/ViewSwitcher";
+import { FieldError } from "@/components/shared/FieldError";
 import { FormShell } from "@/components/shared/FormShell";
 import { MoneyDisplay } from "@/components/shared/MoneyDisplay";
 import { MoneyInput } from "@/components/shared/MoneyInput";
@@ -27,8 +28,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useApi } from "@/hooks/useApi";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { api, normaliseError } from "@/lib/api";
 import { applyServerErrors } from "@/lib/form-errors";
+import { toMinorUnits } from "@/lib/money";
 import { toast } from "@/hooks/use-toast";
 import type { Page, Product, ProductCategory, ProductInput, ProductType } from "@/types/api";
 
@@ -44,14 +47,35 @@ const TYPE_LABELS: Record<ProductType, string> = {
 // SPEC.md §13.5 money mask — two decimals, never a JS number.
 const MONEY_REGEX = /^\d+(\.\d{1,2})?$/;
 
-// Mirrors backend/app/schemas/product.py's ProductCreate/ProductUpdate.
-const productSchema = z.object({
-  name: z.string().trim().min(1, "Name is required").max(200),
-  product_type: z.enum(["goods", "service", "combo"]),
-  category_id: z.string(), // NO_CATEGORY or a stringified id — normalised on submit
-  sales_price: z.string().regex(MONEY_REGEX, "Enter a valid amount, e.g. 199.99"),
-  cost_price: z.string().regex(MONEY_REGEX, "Enter a valid amount, e.g. 199.99"),
-});
+// Mirrors backend/app/schemas/product.py's ProductCreate/ProductUpdate and
+// routers/products.py's COST_ABOVE_SALES_PRICE rule (SPEC.md §13.5 — same
+// limits, same messages).
+const productSchema = z
+  .object({
+    name: z.string().trim().min(1, "Name is required").max(200),
+    product_type: z.enum(["goods", "service", "combo"]),
+    category_id: z.string(), // NO_CATEGORY or a stringified id — normalised on submit
+    sales_price: z
+      .string()
+      .min(1, "Sales price is required")
+      .regex(MONEY_REGEX, "Enter a valid amount, e.g. 199.99"),
+    cost_price: z
+      .string()
+      .min(1, "Cost price is required")
+      .regex(MONEY_REGEX, "Enter a valid amount, e.g. 199.99"),
+  })
+  .superRefine((values, ctx) => {
+    // Compared in integer paise, never as JS floats (AGENTS.md R2).
+    if (!MONEY_REGEX.test(values.sales_price)) return;
+    if (!MONEY_REGEX.test(values.cost_price)) return;
+    if (toMinorUnits(values.cost_price) > toMinorUnits(values.sales_price)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["cost_price"],
+        message: "Cost price cannot be greater than sales price",
+      });
+    }
+  });
 type ProductFormValues = z.infer<typeof productSchema>;
 
 function toProductInput(values: ProductFormValues): ProductInput {
@@ -89,16 +113,13 @@ export default function Products() {
   const [mode, setMode] = useState<Mode>({ kind: "list" });
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState("");
-  const [search, setSearch] = useState("");
+  const search = useDebouncedValue(searchInput);
   const [viewMode, setViewMode] = useState<ViewMode>("list");
 
+  // A new search term is a new result set, so it starts at page 1 again.
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setSearch(searchInput);
-      setPage(1);
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [searchInput]);
+    setPage(1);
+  }, [search]);
 
   const query = new URLSearchParams({ page: String(page), page_size: String(PAGE_SIZE) });
   if (search) query.set("search", search);
@@ -245,7 +266,9 @@ function ProductForm({
       onSaved();
     } catch (e) {
       const apiError = normaliseError(e);
-      const handled = applyServerErrors(apiError, setError);
+      const handled = applyServerErrors(apiError, setError, {
+        COST_ABOVE_SALES_PRICE: "cost_price",
+      });
       if (!handled) {
         toast({ variant: "destructive", title: "Could not save product", description: apiError.message });
       }
@@ -273,13 +296,13 @@ function ProductForm({
     >
       <form onSubmit={handleSubmit(onSubmit)} noValidate className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="sm:col-span-2">
-          <Label htmlFor="name">Name</Label>
+          <Label htmlFor="name" required>Name</Label>
           <Input id="name" {...register("name")} />
-          {errors.name && <p className="mt-1 text-xs text-danger">{errors.name.message}</p>}
+          <FieldError message={errors.name?.message} />
         </div>
 
         <div>
-          <Label htmlFor="product_type">Type</Label>
+          <Label htmlFor="product_type" required>Type</Label>
           <Controller
             control={control}
             name="product_type"
@@ -296,6 +319,7 @@ function ProductForm({
               </Select>
             )}
           />
+          <FieldError message={errors.product_type?.message} />
         </div>
 
         <div>
@@ -333,7 +357,7 @@ function ProductForm({
         </div>
 
         <div>
-          <Label htmlFor="sales_price">Sales Price</Label>
+          <Label htmlFor="sales_price" required>Sales Price</Label>
           <Controller
             control={control}
             name="sales_price"
@@ -341,13 +365,11 @@ function ProductForm({
               <MoneyInput id="sales_price" value={field.value} onChange={field.onChange} />
             )}
           />
-          {errors.sales_price && (
-            <p className="mt-1 text-xs text-danger">{errors.sales_price.message}</p>
-          )}
+          <FieldError message={errors.sales_price?.message} />
         </div>
 
         <div>
-          <Label htmlFor="cost_price">Cost Price</Label>
+          <Label htmlFor="cost_price" required>Cost Price</Label>
           <Controller
             control={control}
             name="cost_price"
@@ -355,9 +377,7 @@ function ProductForm({
               <MoneyInput id="cost_price" value={field.value} onChange={field.onChange} />
             )}
           />
-          {errors.cost_price && (
-            <p className="mt-1 text-xs text-danger">{errors.cost_price.message}</p>
-          )}
+          <FieldError message={errors.cost_price?.message} />
         </div>
       </form>
 
@@ -413,14 +433,16 @@ function CategoryQuickAddDialog({
           <DialogTitle>New category</DialogTitle>
         </DialogHeader>
         <div>
-          <Label htmlFor="new_category_name">Name</Label>
+          <Label htmlFor="new_category_name" required>
+            Name
+          </Label>
           <Input
             id="new_category_name"
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g. Furniture"
           />
-          {error && <p className="mt-1 text-xs text-danger">{error}</p>}
+          <FieldError message={error} />
         </div>
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>

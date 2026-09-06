@@ -145,6 +145,18 @@ class AccountGroupTypeMismatchError(AppError):
     message = "This account type is not valid for the chosen account group."
 
 
+class CostAboveSalesPriceError(AppError):
+    """A product may not cost more to buy than it is offered for (§11).
+
+    Sibling of AccountGroupTypeMismatchError: a two-field consistency rule
+    that neither field can enforce alone, so it lives next to it.
+    """
+
+    code = "COST_ABOVE_SALES_PRICE"
+    status_code = 422
+    message = "Cost price cannot be greater than sales price."
+
+
 class EntryImmutableError(AppError):
     code = "ENTRY_IMMUTABLE"
     status_code = 405

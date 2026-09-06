@@ -6,12 +6,14 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import select
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.deps import require_role
 from app.core.enums import PaymentState, PaymentType
 from app.core.errors import AppError
 from app.core.pagination import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, paginate
+from app.core.search import fk_matches, ilike_any, like_pattern
 from app.database import get_db
 from app.models.partner import Partner
 from app.models.payment import Payment
@@ -73,6 +75,7 @@ def _assert_contact_owns_target(
 def list_payments(
     page: int = Query(1, ge=1),
     page_size: int = Query(DEFAULT_PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE),
+    search: str | None = None,
     payment_type: PaymentType | None = None,
     partner_id: int | None = None,
     state: PaymentState | None = None,
@@ -86,6 +89,18 @@ def list_payments(
         stmt = stmt.where(Payment.partner_id == partner_id)
     if state is not None:
         stmt = stmt.where(Payment.state == state)
+    if search:
+        pattern = like_pattern(search)
+        stmt = stmt.where(
+            or_(
+                ilike_any(pattern, Payment.number, Payment.note),
+                fk_matches(
+                    Payment.partner_id,
+                    Partner.id,
+                    ilike_any(pattern, Partner.name),
+                ),
+            )
+        )
     # id tiebreaker: created_at alone isn't unique (rows from one bulk
     # transaction share a timestamp), which lets LIMIT/OFFSET pagination
     # duplicate/skip rows across pages — see routers/sales_orders.py.

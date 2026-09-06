@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -89,8 +89,14 @@ def compute_line_total(quantity: Decimal, unit_price: Decimal) -> Decimal:
     """quantity x unit_price, in Decimal, server-side, always.
 
     Any line_total the client sent is discarded before this is called (R6).
+
+    Rounded here rather than left to the NUMERIC(14,2) column, and rounded the
+    same way as services/sales.py::compute_line_total — the two cycles used to
+    settle a half-paise tie differently, and the forms now show this product
+    live while you type (lib/money.ts::multiplyMinorUnits), so a disagreement
+    would show up as a figure that changes on save.
     """
-    return quantity * unit_price
+    return (quantity * unit_price).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 def recompute_total(lines) -> Decimal:

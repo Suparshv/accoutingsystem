@@ -6,12 +6,14 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import select
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.deps import require_role
 from app.core.enums import DocumentState, PaymentStatus
 from app.core.errors import AppError, NotFoundError
 from app.core.pagination import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, paginate
+from app.core.search import fk_matches, ilike_any, like_pattern
 from app.database import get_db
 from app.models.analytic import AnalyticAccount
 from app.models.partner import Partner
@@ -120,7 +122,17 @@ def list_sales_orders(
     if state is not None:
         stmt = stmt.where(SalesOrder.state == state)
     if search:
-        stmt = stmt.where(SalesOrder.number.ilike(f"%{search}%"))
+        pattern = like_pattern(search)
+        stmt = stmt.where(
+            or_(
+                ilike_any(pattern, SalesOrder.number),
+                fk_matches(
+                    SalesOrder.customer_id,
+                    Partner.id,
+                    ilike_any(pattern, Partner.name),
+                ),
+            )
+        )
     # A secondary tiebreaker is required, not cosmetic: seed/bulk-created rows
     # routinely share the exact same created_at (Postgres's now() is
     # transaction-scoped, so every row inserted in one transaction gets an

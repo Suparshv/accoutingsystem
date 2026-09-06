@@ -11,6 +11,7 @@ from app.core.enums import UserRole
 from app.core.errors import AppError
 from app.core.pagination import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, paginate
 from app.core.security import encode_token, hash_password, verify_password
+from app.core.search import ilike_any, like_pattern
 from app.database import get_db
 from app.models.partner import Partner
 from app.models.user import User
@@ -132,7 +133,9 @@ def list_users(
 ) -> Page[UserOut]:
     stmt = select(User)
     if search:
-        stmt = stmt.where(User.login_id.ilike(f"%{search}%"))
+        stmt = stmt.where(
+            ilike_any(like_pattern(search), User.name, User.login_id, User.email)
+        )
     # id tiebreaker: created_at alone isn't unique (rows from one bulk
     # transaction share a timestamp), which lets LIMIT/OFFSET pagination
     # duplicate/skip rows across pages — see routers/sales_orders.py.

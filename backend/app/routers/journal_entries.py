@@ -8,11 +8,13 @@ matches with a method that does not. Immutability by absence of API.
 
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import BigInteger, Column, MetaData, String, Table, func, select
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.deps import require_role
 from app.core.enums import JournalEntryState
 from app.core.errors import NotFoundError
+from app.core.search import ESCAPE, ilike_any, like_pattern
 from app.database import get_db
 from app.models.account import Account, Journal
 from app.models.journal_entry import JournalEntry
@@ -70,7 +72,14 @@ def list_journal_entries(
     if state is not None:
         stmt = stmt.where(JournalEntry.state == state)
     if search:
-        stmt = stmt.where(JournalEntry.number.ilike(f"%{search}%"))
+        pattern = like_pattern(search)
+        stmt = stmt.where(
+            or_(
+                ilike_any(pattern, JournalEntry.number, JournalEntry.reference),
+                _partners.c.name.ilike(pattern, escape=ESCAPE),
+                Journal.name.ilike(pattern, escape=ESCAPE),
+            )
+        )
 
     total = db.execute(select(func.count()).select_from(stmt.subquery())).scalar_one()
 

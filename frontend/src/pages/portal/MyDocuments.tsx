@@ -85,8 +85,6 @@ export default function MyDocuments({
         pageSize={rows.length || 20}
         total={rows.length}
         onPageChange={() => {}}
-        searchValue=""
-        onSearchChange={() => {}}
         onRetry={refetch}
         getRowId={(row) => `${row.document_type}-${row.id}`}
         emptyMessage={
@@ -104,6 +102,7 @@ export default function MyDocuments({
           partnerId={user.partner_id}
           partnerName={user.name ?? "You"}
           amountDue={paying.amount_due}
+          documentDate={paying.date}
           invoiceId={paying.document_type === "invoice" ? paying.id : undefined}
           billId={paying.document_type === "bill" ? paying.id : undefined}
           onPaid={async () => {

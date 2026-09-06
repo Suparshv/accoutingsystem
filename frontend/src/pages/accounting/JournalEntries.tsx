@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Plus } from "lucide-react";
 import { DataTable, type DataTableColumn } from "@/components/shared/DataTable";
+import { FieldError } from "@/components/shared/FieldError";
 import { FormShell } from "@/components/shared/FormShell";
 import { LineItemsTable, type LineItemColumn } from "@/components/shared/LineItemsTable";
 import { MoneyDisplay } from "@/components/shared/MoneyDisplay";
@@ -25,8 +26,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useApi } from "@/hooks/useApi";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { api, normaliseError } from "@/lib/api";
 import { toast } from "@/hooks/use-toast";
+import { hasErrors, requiredErrors } from "@/lib/validation";
 import type {
   Account,
   Journal,
@@ -61,15 +64,12 @@ export default function JournalEntries() {
   const [mode, setMode] = useState<Mode>({ kind: "list" });
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState("");
-  const [search, setSearch] = useState("");
+  const search = useDebouncedValue(searchInput);
 
+  // A new search term is a new result set, so it starts at page 1 again.
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setSearch(searchInput);
-      setPage(1);
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [searchInput]);
+    setPage(1);
+  }, [search]);
 
   const query = new URLSearchParams({ page: String(page), page_size: String(PAGE_SIZE) });
   if (search) query.set("search", search);
@@ -166,6 +166,21 @@ function JournalEntryForm({
   const [lines, setLines] = useState<DraftLine[]>([{ ...BLANK_LINE }, { ...BLANK_LINE }]);
   const [isBalanced, setIsBalanced] = useState(true);
   const [posting, setPosting] = useState(false);
+  // Errors stay hidden until the first Post attempt, so a fresh entry is not
+  // red before it has been touched.
+  const [showErrors, setShowErrors] = useState(false);
+
+  const errors = requiredErrors({
+    entry_date: [entryDate, "Accounting date"],
+    journal_id: [journalId, "Journal"],
+  });
+  if (!lines.some((line) => line.account_id)) {
+    errors.lines = "At least one line with an account is required";
+  }
+  // Blocks Post but is not rendered as a field error — the balance banner
+  // below the lines table already says this, and says it live.
+  if (!isBalanced) errors.balance = "Total debits must equal total credits";
+  const fieldError = (name: string) => (showErrors ? errors[name] : undefined);
 
   const { data: journals } = useApi<Page<Journal>>("/journals?page=1&page_size=100", []);
   const { data: accounts } = useApi<Page<Account>>("/accounts?page=1&page_size=100", []);
@@ -235,6 +250,8 @@ function JournalEntryForm({
   ];
 
   async function handlePost() {
+    setShowErrors(true);
+    if (hasErrors(errors)) return;
     setPosting(true);
     try {
       await api.post<JournalEntry>("/journal-entries", {
@@ -266,8 +283,6 @@ function JournalEntryForm({
     }
   }
 
-  const canPost = isBalanced && !!journalId && lines.some((line) => line.account_id);
-
   return (
     <FormShell
       title="New Journal Entry"
@@ -277,24 +292,29 @@ function JournalEntryForm({
         {
           label: posting ? "Posting..." : "Post",
           onClick: handlePost,
-          disabled: !canPost || posting,
+          disabled: posting,
         },
       ]}
     >
       <div className="flex flex-col gap-6">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <Label htmlFor="entry_date">Accounting Date</Label>
+            <Label htmlFor="entry_date" required>
+              Accounting Date
+            </Label>
             <Input
               id="entry_date"
               type="date"
               value={entryDate}
               onChange={(e) => setEntryDate(e.target.value)}
             />
+            <FieldError message={fieldError("entry_date")} />
           </div>
 
           <div>
-            <Label htmlFor="journal_id">Journal</Label>
+            <Label htmlFor="journal_id" required>
+              Journal
+            </Label>
             <Select value={journalId} onValueChange={setJournalId}>
               <SelectTrigger id="journal_id">
                 <SelectValue placeholder="Select journal" />
@@ -307,6 +327,7 @@ function JournalEntryForm({
                 ))}
               </SelectContent>
             </Select>
+            <FieldError message={fieldError("journal_id")} />
           </div>
 
           <div>
@@ -348,10 +369,12 @@ function JournalEntryForm({
           onAddRow={() => setLines((prev) => [...prev, { ...BLANK_LINE }])}
           onRemoveRow={(index) => setLines((prev) => prev.filter((_, i) => i !== index))}
         />
+        <FieldError message={fieldError("lines")} />
 
         {!isBalanced && (
-          <p className="rounded border border-danger bg-danger/5 px-3 py-2 text-sm text-danger">
-            Debit and credit amounts do not match. Post stays disabled until they balance.
+          <p role="alert" className="rounded border border-danger bg-danger/5 px-3 py-2 text-sm text-danger">
+            Debit and credit amounts do not match. An entry cannot be posted until
+            they balance.
           </p>
         )}
       </div>

@@ -4,6 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Plus } from "lucide-react";
 import { DataTable, type DataTableColumn } from "@/components/shared/DataTable";
+import { FieldError } from "@/components/shared/FieldError";
 import { FormShell } from "@/components/shared/FormShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,6 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useApi } from "@/hooks/useApi";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { api, normaliseError } from "@/lib/api";
 import { applyServerErrors } from "@/lib/form-errors";
 import { toast } from "@/hooks/use-toast";
@@ -41,19 +43,21 @@ const userSchema = z
     name: z.string().trim().min(1, "Name is required"),
     login_id: z
       .string()
+      .min(1, "Login ID is required")
       .regex(
         LOGIN_ID_REGEX,
         "login_id must be 6-12 characters: letters, digits and underscore only",
       ),
-    email: z.string().email("Enter a valid email address"),
+    email: z.string().min(1, "Email is required").email("Enter a valid email address"),
     role: z.enum(["admin", "contact"]),
     password: z
       .string()
+      .min(1, "Password is required")
       .regex(
         PASSWORD_REGEX,
         "password must be at least 9 characters and include an uppercase letter, a lowercase letter and a special character",
       ),
-    confirm_password: z.string(),
+    confirm_password: z.string().min(1, "Confirm the password"),
     partner_id: z.string(),
   })
   .refine((data) => data.password === data.confirm_password, {
@@ -72,15 +76,12 @@ export default function Users() {
   const [creating, setCreating] = useState(false);
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState("");
-  const [search, setSearch] = useState("");
+  const search = useDebouncedValue(searchInput);
 
+  // A new search term is a new result set, so it starts at page 1 again.
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setSearch(searchInput);
-      setPage(1);
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [searchInput]);
+    setPage(1);
+  }, [search]);
 
   const query = new URLSearchParams({ page: String(page), page_size: String(PAGE_SIZE) });
   if (search) query.set("search", search);
@@ -229,27 +230,25 @@ function UserForm({
         className="grid grid-cols-1 gap-4 sm:grid-cols-2"
       >
         <div>
-          <Label htmlFor="name">Name</Label>
+          <Label htmlFor="name" required>Name</Label>
           <Input id="name" {...register("name")} />
-          {errors.name && <p className="mt-1 text-xs text-danger">{errors.name.message}</p>}
+          <FieldError message={errors.name?.message} />
         </div>
 
         <div>
-          <Label htmlFor="login_id">Login ID</Label>
+          <Label htmlFor="login_id" required>Login ID</Label>
           <Input id="login_id" {...register("login_id")} />
-          {errors.login_id && (
-            <p className="mt-1 text-xs text-danger">{errors.login_id.message}</p>
-          )}
+          <FieldError message={errors.login_id?.message} />
         </div>
 
         <div>
-          <Label htmlFor="email">Email</Label>
+          <Label htmlFor="email" required>Email</Label>
           <Input id="email" type="email" {...register("email")} />
-          {errors.email && <p className="mt-1 text-xs text-danger">{errors.email.message}</p>}
+          <FieldError message={errors.email?.message} />
         </div>
 
         <div>
-          <Label htmlFor="role">Role</Label>
+          <Label htmlFor="role" required>Role</Label>
           <Controller
             control={control}
             name="role"
@@ -265,13 +264,16 @@ function UserForm({
               </Select>
             )}
           />
+          <FieldError message={errors.role?.message} />
           <p className="mt-1 text-xs text-text_secondary">
             Accountants are created by public self-signup, not here.
           </p>
         </div>
 
         <div className="sm:col-span-2">
-          <Label htmlFor="partner_id">Linked contact {role === "contact" && "(required)"}</Label>
+          <Label htmlFor="partner_id" required={role === "contact"}>
+            Linked contact
+          </Label>
           <Controller
             control={control}
             name="partner_id"
@@ -291,25 +293,19 @@ function UserForm({
               </Select>
             )}
           />
-          {errors.partner_id && (
-            <p className="mt-1 text-xs text-danger">{errors.partner_id.message}</p>
-          )}
+          <FieldError message={errors.partner_id?.message} />
         </div>
 
         <div>
-          <Label htmlFor="password">Password</Label>
+          <Label htmlFor="password" required>Password</Label>
           <Input id="password" type="password" {...register("password")} />
-          {errors.password && (
-            <p className="mt-1 text-xs text-danger">{errors.password.message}</p>
-          )}
+          <FieldError message={errors.password?.message} />
         </div>
 
         <div>
-          <Label htmlFor="confirm_password">Confirm password</Label>
+          <Label htmlFor="confirm_password" required>Confirm password</Label>
           <Input id="confirm_password" type="password" {...register("confirm_password")} />
-          {errors.confirm_password && (
-            <p className="mt-1 text-xs text-danger">{errors.confirm_password.message}</p>
-          )}
+          <FieldError message={errors.confirm_password?.message} />
         </div>
       </form>
     </FormShell>

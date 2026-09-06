@@ -4,6 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Plus } from "lucide-react";
 import { DataTable, type DataTableColumn } from "@/components/shared/DataTable";
+import { FieldError } from "@/components/shared/FieldError";
 import { FormShell } from "@/components/shared/FormShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,6 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useApi } from "@/hooks/useApi";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { api, normaliseError } from "@/lib/api";
 import { applyServerErrors } from "@/lib/form-errors";
 import { toast } from "@/hooks/use-toast";
@@ -43,15 +45,12 @@ export default function Journals() {
   const [mode, setMode] = useState<Mode>({ kind: "list" });
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState("");
-  const [search, setSearch] = useState("");
+  const search = useDebouncedValue(searchInput);
 
+  // A new search term is a new result set, so it starts at page 1 again.
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setSearch(searchInput);
-      setPage(1);
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [searchInput]);
+    setPage(1);
+  }, [search]);
 
   const query = new URLSearchParams({ page: String(page), page_size: String(PAGE_SIZE) });
   if (search) query.set("search", search);
@@ -190,13 +189,13 @@ function JournalForm({
         className="grid grid-cols-1 gap-4 sm:grid-cols-2"
       >
         <div>
-          <Label htmlFor="name">Name</Label>
+          <Label htmlFor="name" required>Name</Label>
           <Input id="name" {...register("name")} />
-          {errors.name && <p className="mt-1 text-xs text-danger">{errors.name.message}</p>}
+          <FieldError message={errors.name?.message} />
         </div>
 
         <div>
-          <Label htmlFor="journal_type">Type</Label>
+          <Label htmlFor="journal_type" required>Type</Label>
           <Controller
             control={control}
             name="journal_type"
@@ -215,10 +214,11 @@ function JournalForm({
               </Select>
             )}
           />
+          <FieldError message={errors.journal_type?.message} />
         </div>
 
         <div className="sm:col-span-2">
-          <Label htmlFor="default_account_id">Default Account</Label>
+          <Label htmlFor="default_account_id" required>Default Account</Label>
           <Controller
             control={control}
             name="default_account_id"
@@ -237,9 +237,7 @@ function JournalForm({
               </Select>
             )}
           />
-          {errors.default_account_id && (
-            <p className="mt-1 text-xs text-danger">{errors.default_account_id.message}</p>
-          )}
+          <FieldError message={errors.default_account_id?.message} />
           <p className="mt-1 text-xs text-text_secondary">
             For Bank and Cash journals this is the account debited on receipt and credited
             on payment.

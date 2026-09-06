@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -136,8 +136,16 @@ def _get_sales_journal_default_account_id(db: Session) -> int:
 
 
 def compute_line_total(quantity: Decimal, unit_price: Decimal) -> Decimal:
-    """quantity * unit_price, rounded to the money precision (R6, §11)."""
-    return (quantity * unit_price).quantize(Decimal("0.01"))
+    """quantity x unit_price, rounded to the money precision (R6, §11).
+
+    Half away from zero, stated explicitly rather than left to a default:
+    Decimal.quantize defaults to ROUND_HALF_EVEN while Postgres NUMERIC
+    rounds half away from zero, so the two cycles used to round a half-paise
+    tie in opposite directions. The document forms now show this same product
+    live while you type (lib/money.ts::multiplyMinorUnits), which makes any
+    disagreement visible as a figure that changes on save.
+    """
+    return (quantity * unit_price).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 def recompute_total(lines: list) -> Decimal:

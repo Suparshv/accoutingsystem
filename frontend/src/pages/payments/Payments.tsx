@@ -3,6 +3,7 @@ import { DataTable, type DataTableColumn } from "@/components/shared/DataTable";
 import { MoneyDisplay } from "@/components/shared/MoneyDisplay";
 import { StatusBadge, type Status } from "@/components/shared/StatusBadge";
 import { useApi } from "@/hooks/useApi";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import type { Page, Payment, PaymentType } from "@/types/api";
 
 const PAGE_SIZE = 20;
@@ -19,20 +20,13 @@ type PaymentsProps = {
 export default function Payments({ paymentType, title, description }: PaymentsProps) {
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState("");
-  const [search, setSearch] = useState("");
+  const search = useDebouncedValue(searchInput);
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setSearch(searchInput);
-      setPage(1);
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [searchInput]);
-
-  // Reset paging when the caller switches between receipts and payments.
+  // A new result set starts at page 1 again — whether it is a new search term
+  // or the caller switching between receipts and payments.
   useEffect(() => {
     setPage(1);
-  }, [paymentType]);
+  }, [search, paymentType]);
 
   const query = new URLSearchParams({
     page: String(page),

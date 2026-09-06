@@ -10,12 +10,14 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import select
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.deps import require_role
 from app.core.enums import DocumentState
 from app.core.errors import AppError
 from app.core.pagination import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, paginate
+from app.core.search import fk_matches, ilike_any, like_pattern
 from app.database import get_db
 from app.models.analytic import AnalyticAccount
 from app.models.partner import Partner
@@ -54,7 +56,17 @@ def list_purchase_orders(
     if vendor_id is not None:
         stmt = stmt.where(PurchaseOrder.vendor_id == vendor_id)
     if search:
-        stmt = stmt.where(PurchaseOrder.number.ilike(f"%{search}%"))
+        pattern = like_pattern(search)
+        stmt = stmt.where(
+            or_(
+                ilike_any(pattern, PurchaseOrder.number),
+                fk_matches(
+                    PurchaseOrder.vendor_id,
+                    Partner.id,
+                    ilike_any(pattern, Partner.name),
+                ),
+            )
+        )
     # id tiebreaker: created_at alone isn't unique (rows from one bulk
     # transaction share a timestamp), which lets LIMIT/OFFSET pagination
     # duplicate/skip rows across pages — see sales_orders.py's list route.

@@ -3,8 +3,10 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import { FieldError } from "@/components/shared/FieldError";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/useAuth";
 import { normaliseError } from "@/lib/api";
 import { applyServerErrors } from "@/lib/form-errors";
@@ -58,34 +60,32 @@ export default function Login() {
           )}
 
           <div>
-            <label
+            <Label
               htmlFor="login_id"
+              required
               className="mb-1 block text-xs font-medium text-text_secondary"
             >
               Login ID
-            </label>
+            </Label>
             <Input id="login_id" autoComplete="username" {...register("login_id")} />
-            {errors.login_id && (
-              <p className="mt-1 text-xs text-danger">{errors.login_id.message}</p>
-            )}
+            <FieldError message={errors.login_id?.message} />
           </div>
 
           <div>
-            <label
+            <Label
               htmlFor="password"
+              required
               className="mb-1 block text-xs font-medium text-text_secondary"
             >
               Password
-            </label>
+            </Label>
             <Input
               id="password"
               type="password"
               autoComplete="current-password"
               {...register("password")}
             />
-            {errors.password && (
-              <p className="mt-1 text-xs text-danger">{errors.password.message}</p>
-            )}
+            <FieldError message={errors.password?.message} />
           </div>
 
           <Button type="submit" disabled={isSubmitting} className="mt-2">

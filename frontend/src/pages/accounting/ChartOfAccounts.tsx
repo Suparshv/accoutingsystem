@@ -4,6 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Plus } from "lucide-react";
 import { DataTable, type DataTableColumn } from "@/components/shared/DataTable";
+import { FieldError } from "@/components/shared/FieldError";
 import { FormShell } from "@/components/shared/FormShell";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { Button } from "@/components/ui/button";
@@ -17,6 +18,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useApi } from "@/hooks/useApi";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { api, normaliseError } from "@/lib/api";
 import { applyServerErrors } from "@/lib/form-errors";
 import { toast } from "@/hooks/use-toast";
@@ -77,16 +79,13 @@ export default function ChartOfAccounts() {
   const [mode, setMode] = useState<Mode>({ kind: "list" });
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState("");
-  const [search, setSearch] = useState("");
+  const search = useDebouncedValue(searchInput);
   const [includeArchived, setIncludeArchived] = useState(false);
 
+  // A new search term is a new result set, so it starts at page 1 again.
   useEffect(() => {
-    const timer = setTimeout(() => {
-      setSearch(searchInput);
-      setPage(1);
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [searchInput]);
+    setPage(1);
+  }, [search]);
 
   const query = new URLSearchParams({
     page: String(page),
@@ -283,19 +282,19 @@ function AccountForm({
         className="grid grid-cols-1 gap-4 sm:grid-cols-2"
       >
         <div>
-          <Label htmlFor="code">Code</Label>
+          <Label htmlFor="code" required>Code</Label>
           <Input id="code" {...register("code")} />
-          {errors.code && <p className="mt-1 text-xs text-danger">{errors.code.message}</p>}
+          <FieldError message={errors.code?.message} />
         </div>
 
         <div>
-          <Label htmlFor="name">Name</Label>
+          <Label htmlFor="name" required>Name</Label>
           <Input id="name" {...register("name")} />
-          {errors.name && <p className="mt-1 text-xs text-danger">{errors.name.message}</p>}
+          <FieldError message={errors.name?.message} />
         </div>
 
         <div>
-          <Label htmlFor="account_group">Group</Label>
+          <Label htmlFor="account_group" required>Group</Label>
           <Controller
             control={control}
             name="account_group"
@@ -321,10 +320,11 @@ function AccountForm({
               </Select>
             )}
           />
+          <FieldError message={errors.account_group?.message} />
         </div>
 
         <div>
-          <Label htmlFor="account_type">Type</Label>
+          <Label htmlFor="account_type" required>Type</Label>
           <Controller
             control={control}
             name="account_type"
@@ -343,9 +343,7 @@ function AccountForm({
               </Select>
             )}
           />
-          {errors.account_type && (
-            <p className="mt-1 text-xs text-danger">{errors.account_type.message}</p>
-          )}
+          <FieldError message={errors.account_type?.message} />
         </div>
       </form>
     </FormShell>

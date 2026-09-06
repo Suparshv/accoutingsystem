@@ -8,12 +8,14 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import select
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.deps import require_role
 from app.core.enums import BudgetState
 from app.core.errors import AppError
 from app.core.pagination import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, paginate
+from app.core.search import fk_matches, ilike_any, like_pattern
 from app.database import get_db
 from app.models.analytic import AnalyticAccount
 from app.models.budget import Budget, BudgetLine
@@ -49,7 +51,17 @@ def list_budgets(
     if state is not None:
         stmt = stmt.where(Budget.state == state)
     if search:
-        stmt = stmt.where(Budget.name.ilike(f"%{search}%"))
+        pattern = like_pattern(search)
+        stmt = stmt.where(
+            or_(
+                ilike_any(pattern, Budget.name),
+                fk_matches(
+                    Budget.responsible_id,
+                    Partner.id,
+                    ilike_any(pattern, Partner.name),
+                ),
+            )
+        )
     # id tiebreaker: created_at alone isn't unique (rows from one bulk
     # transaction share a timestamp), which lets LIMIT/OFFSET pagination
     # duplicate/skip rows across pages — see routers/sales_orders.py.

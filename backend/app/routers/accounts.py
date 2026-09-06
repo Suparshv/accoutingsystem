@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.core.deps import require_role
 from app.core.enums import AccountGroup, AccountType
 from app.core.errors import NotFoundError
+from app.core.search import ilike_any, like_pattern
 from app.database import get_db
 from app.models.account import Account
 from app.models.user import User
@@ -39,7 +40,7 @@ def list_accounts(
     if account_group is not None:
         stmt = stmt.where(Account.account_group == account_group)
     if search:
-        stmt = stmt.where(Account.name.ilike(f"%{search}%"))
+        stmt = stmt.where(ilike_any(like_pattern(search), Account.code, Account.name))
 
     total = db.execute(select(func.count()).select_from(stmt.subquery())).scalar_one()
 

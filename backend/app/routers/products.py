@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user, require_role
 from app.core.enums import ProductType
-from app.core.errors import AppError
+from app.core.errors import AppError, CostAboveSalesPriceError
 from app.core.pagination import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, paginate
+from app.core.search import fk_matches, ilike_any, like_pattern
 from app.database import get_db
 from app.models.product import Product, ProductCategory
 from app.models.user import User
@@ -35,6 +39,17 @@ def _get_active_product(db: Session, product_id: int) -> Product:
 def _assert_category_exists(db: Session, category_id: int | None) -> None:
     if category_id is not None and db.get(ProductCategory, category_id) is None:
         raise AppError(404, "NOT_FOUND", "Product category not found.")
+
+
+def _assert_cost_not_above_sales(sales_price: Decimal, cost_price: Decimal) -> None:
+    """A product sold below what it cost is a data-entry slip, not a strategy.
+
+    Checked against the *resulting* row, not the request body: a PATCH-shaped
+    update that sends only cost_price must still be compared with the sales
+    price already stored, or the rule is trivially bypassed in two requests.
+    """
+    if cost_price > sales_price:
+        raise CostAboveSalesPriceError()
 
 
 # --- product categories (create-on-the-fly from the product form) ---
@@ -85,7 +100,17 @@ def list_products(
 ) -> Page[ProductOut]:
     stmt = select(Product).where(Product.is_active.is_(True))
     if search:
-        stmt = stmt.where(Product.name.ilike(f"%{search}%"))
+        pattern = like_pattern(search)
+        stmt = stmt.where(
+            or_(
+                ilike_any(pattern, Product.name),
+                fk_matches(
+                    Product.category_id,
+                    ProductCategory.id,
+                    ilike_any(pattern, ProductCategory.name),
+                ),
+            )
+        )
     if category_id is not None:
         stmt = stmt.where(Product.category_id == category_id)
     if product_type is not None:
@@ -114,6 +139,7 @@ def create_product(
     current_user: User = Depends(require_role("admin", "accountant")),
 ) -> Product:
     _assert_category_exists(db, body.category_id)
+    _assert_cost_not_above_sales(body.sales_price, body.cost_price)
     product = Product(**body.model_dump())
     db.add(product)
     db.commit()
@@ -131,7 +157,12 @@ def update_product(
     product = _get_active_product(db, product_id)
     if body.category_id is not None:
         _assert_category_exists(db, body.category_id)
-    for field, value in body.model_dump(exclude_unset=True).items():
+    patch = body.model_dump(exclude_unset=True)
+    _assert_cost_not_above_sales(
+        patch.get("sales_price", product.sales_price),
+        patch.get("cost_price", product.cost_price),
+    )
+    for field, value in patch.items():
         setattr(product, field, value)
     db.commit()
     db.refresh(product)

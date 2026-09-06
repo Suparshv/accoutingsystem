@@ -173,7 +173,24 @@ def register_payment(
     _assert_direction_matches(payment_type, invoice_id, bill_id)
     _assert_payment_journal(db, journal_id)
 
-    summary = _target_summary(db, invoice_id=invoice_id, bill_id=bill_id)
+    summary, document_date = _target_summary(db, invoice_id=invoice_id, bill_id=bill_id)
+
+    # Money cannot be received against an invoice that did not exist yet. The
+    # payment's date becomes its journal entry's entry_date (§8.2), so a
+    # backdated payment would post to the ledger before the document it
+    # settles — the trial balance would show the payment in a period where
+    # nothing was owed.
+    if payment_date < document_date:
+        raise AppError(
+            422,
+            "PAYMENT_BEFORE_DOCUMENT",
+            f"A payment cannot be dated before the document it settles "
+            f"({document_date.isoformat()}).",
+            {
+                "payment_date": payment_date.isoformat(),
+                "document_date": document_date.isoformat(),
+            },
+        )
 
     # Overpayment is rejected rather than clamped: silently accepting 5000
     # against a 4000 balance would leave the ledger showing a negative debt.
@@ -235,7 +252,7 @@ def confirm_payment(db: Session, payment: Payment) -> Payment:
 
     # Re-checked at confirm, not only at registration: another payment may have
     # been confirmed against the same document in between.
-    summary = _target_summary(
+    summary, _document_date = _target_summary(
         db, invoice_id=payment.invoice_id, bill_id=payment.bill_id
     )
     if payment.amount > summary.amount_due:
@@ -369,8 +386,12 @@ def _assert_payment_journal(db: Session, journal_id: int) -> None:
 
 def _target_summary(
     db: Session, *, invoice_id: int | None, bill_id: int | None
-) -> PaymentSummary:
-    """Load the target document and assert it is confirmed."""
+) -> tuple[PaymentSummary, date_type]:
+    """Load the target document, assert it is confirmed, return its date too.
+
+    The date comes back with the summary because the caller needs both and
+    this is the one place the document is fetched.
+    """
     if bill_id is not None:
         bill = db.get(VendorBill, bill_id)
         if bill is None:
@@ -381,7 +402,7 @@ def _target_summary(
                 "DOCUMENT_NOT_CONFIRMED",
                 "A draft bill cannot be paid. Confirm it first.",
             )
-        return bill_payment_summary(db, bill)
+        return bill_payment_summary(db, bill), bill.bill_date
 
     invoice = db.get(CustomerInvoice, invoice_id)
     if invoice is None:
@@ -392,8 +413,11 @@ def _target_summary(
             "DOCUMENT_NOT_CONFIRMED",
             "A draft invoice cannot be paid. Confirm it first.",
         )
-    return summarise(
-        Decimal(invoice.total_amount), amount_paid_for_invoice(db, invoice_id)
+    return (
+        summarise(
+            Decimal(invoice.total_amount), amount_paid_for_invoice(db, invoice_id)
+        ),
+        invoice.invoice_date,
     )
 
 

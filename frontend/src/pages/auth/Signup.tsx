@@ -3,8 +3,10 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Link, useNavigate } from "react-router-dom";
+import { FieldError } from "@/components/shared/FieldError";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/useAuth";
 import { normaliseError } from "@/lib/api";
 import { applyServerErrors } from "@/lib/form-errors";
@@ -20,15 +22,17 @@ const signupSchema = z
   .object({
     login_id: z
       .string()
+      .min(1, "Login ID is required")
       .regex(LOGIN_ID_REGEX, "login_id must be 6-12 characters: letters, digits and underscore only"),
-    email: z.string().email("Enter a valid email address"),
+    email: z.string().min(1, "Email is required").email("Enter a valid email address"),
     password: z
       .string()
+      .min(1, "Password is required")
       .regex(
         PASSWORD_REGEX,
         "password must be at least 9 characters and include an uppercase letter, a lowercase letter and a special character",
       ),
-    confirm_password: z.string(),
+    confirm_password: z.string().min(1, "Confirm your password"),
   })
   .refine((data) => data.password === data.confirm_password, {
     message: "confirm_password must match password",
@@ -82,60 +86,61 @@ export default function Signup() {
           )}
 
           <div>
-            <label
+            <Label
               htmlFor="login_id"
+              required
               className="mb-1 block text-xs font-medium text-text_secondary"
             >
               Login ID
-            </label>
+            </Label>
             <Input id="login_id" autoComplete="username" {...register("login_id")} />
-            {errors.login_id && (
-              <p className="mt-1 text-xs text-danger">{errors.login_id.message}</p>
-            )}
+            <FieldError message={errors.login_id?.message} />
           </div>
 
           <div>
-            <label htmlFor="email" className="mb-1 block text-xs font-medium text-text_secondary">
+            <Label
+              htmlFor="email"
+              required
+              className="mb-1 block text-xs font-medium text-text_secondary"
+            >
               Email
-            </label>
+            </Label>
             <Input id="email" type="email" autoComplete="email" {...register("email")} />
-            {errors.email && <p className="mt-1 text-xs text-danger">{errors.email.message}</p>}
+            <FieldError message={errors.email?.message} />
           </div>
 
           <div>
-            <label
+            <Label
               htmlFor="password"
+              required
               className="mb-1 block text-xs font-medium text-text_secondary"
             >
               Password
-            </label>
+            </Label>
             <Input
               id="password"
               type="password"
               autoComplete="new-password"
               {...register("password")}
             />
-            {errors.password && (
-              <p className="mt-1 text-xs text-danger">{errors.password.message}</p>
-            )}
+            <FieldError message={errors.password?.message} />
           </div>
 
           <div>
-            <label
+            <Label
               htmlFor="confirm_password"
+              required
               className="mb-1 block text-xs font-medium text-text_secondary"
             >
               Confirm password
-            </label>
+            </Label>
             <Input
               id="confirm_password"
               type="password"
               autoComplete="new-password"
               {...register("confirm_password")}
             />
-            {errors.confirm_password && (
-              <p className="mt-1 text-xs text-danger">{errors.confirm_password.message}</p>
-            )}
+            <FieldError message={errors.confirm_password?.message} />
           </div>
 
           <Button type="submit" disabled={isSubmitting} className="mt-2">

@@ -43,6 +43,13 @@ export type LineItemsTableProps<T> = {
   onAddRow: () => void;
   onRemoveRow: (index: number) => void;
   addLabel?: string;
+  // A document that can no longer be edited — confirmed, posted, revised,
+  // cancelled. The page already computes this for its own column `disabled`
+  // props; pass the same flag here so the table's OWN two controls (add row,
+  // remove row) obey it. Without this the buttons stayed live on a read-only
+  // document and could push phantom rows into local state that no Save button
+  // existed to persist.
+  readOnly?: boolean;
 } & (DocumentVariant<T> | JournalEntryVariant<T>);
 
 // SPEC.md §13.2 LineItemsTable — reused for PO/Bill/SO/Invoice/Journal Entry/
@@ -53,7 +60,14 @@ export type LineItemsTableProps<T> = {
 // calls the API), so it lives in the render function a page supplies, not
 // here.
 export function LineItemsTable<T>(props: LineItemsTableProps<T>) {
-  const { rows, columns, onAddRow, onRemoveRow, addLabel = "Add line" } = props;
+  const {
+    rows,
+    columns,
+    onAddRow,
+    onRemoveRow,
+    addLabel = "Add line",
+    readOnly = false,
+  } = props;
   const isJournalEntry = props.variant === "journal_entry";
 
   // All three totals are exact integer-paise sums, never float arithmetic.
@@ -105,6 +119,7 @@ export function LineItemsTable<T>(props: LineItemsTableProps<T>) {
                     variant="ghost"
                     size="icon"
                     aria-label="Remove line"
+                    disabled={readOnly}
                     onClick={() => onRemoveRow(index)}
                   >
                     <Trash2 className="h-4 w-4 text-danger" />
@@ -116,16 +131,20 @@ export function LineItemsTable<T>(props: LineItemsTableProps<T>) {
         </Table>
       </div>
 
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        onClick={onAddRow}
-        className="self-start"
-      >
-        <Plus className="mr-2 h-4 w-4" />
-        {addLabel}
-      </Button>
+      {/* Removed, not disabled — the pages drop the Save button on a
+          read-only document rather than greying it, so this matches. */}
+      {!readOnly && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={onAddRow}
+          className="self-start"
+        >
+          <Plus className="mr-2 h-4 w-4" />
+          {addLabel}
+        </Button>
+      )}
 
       {isJournalEntry ? (
         <div className="flex flex-col items-end gap-1 border-t border-border pt-3 text-sm">

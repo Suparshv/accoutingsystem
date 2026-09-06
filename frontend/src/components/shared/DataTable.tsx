@@ -32,8 +32,12 @@ export type DataTableProps<T> = {
   total: number;
   onPageChange: (page: number) => void;
   onRowClick?: (row: T) => void;
-  searchValue: string;
-  onSearchChange: (value: string) => void;
+  // Omit both to render no search box at all. Two views (the contact portal's
+  // My Documents, the Budget Report) fetch their whole result set at once and
+  // used to pass "" with a no-op handler, leaving a box on screen that could
+  // never filter anything — which reads as a broken search, not an absent one.
+  searchValue?: string;
+  onSearchChange?: (value: string) => void;
   emptyMessage?: string;
   onRetry?: () => void;
   getRowId: (row: T) => string | number;
@@ -66,15 +70,17 @@ export function DataTable<T>({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="relative w-full max-w-xs">
-        <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-text_secondary" />
-        <Input
-          value={searchValue}
-          onChange={(e) => onSearchChange(e.target.value)}
-          placeholder="Search..."
-          className="pl-8"
-        />
-      </div>
+      {onSearchChange && (
+        <div className="relative w-full max-w-xs">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-text_secondary" />
+          <Input
+            value={searchValue ?? ""}
+            onChange={(e) => onSearchChange(e.target.value)}
+            placeholder="Search..."
+            className="pl-8"
+          />
+        </div>
+      )}
 
       <div className="overflow-hidden rounded-md border border-border">
         {loading && (
