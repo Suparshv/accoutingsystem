@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.core.enums import DocumentState, PaymentStatus
 from app.schemas.common import Money
+from app.schemas.payment import PaymentHistoryEntry
 
 
 class SalesOrderLineCreate(BaseModel):
@@ -164,6 +165,10 @@ class CustomerInvoiceRead(BaseModel):
     amount_paid: Money = Decimal("0.00")
     amount_due: Money = Decimal("0.00")
     payment_status: PaymentStatus = PaymentStatus.NOT_PAID
+    # Confirmed payments against this invoice, oldest first (§9 portal) — not
+    # on the ORM object, populated by the router alongside the other derived
+    # payment fields above.
+    payments: list[PaymentHistoryEntry] = []
     lines: list[CustomerInvoiceLineRead] = []
 
 

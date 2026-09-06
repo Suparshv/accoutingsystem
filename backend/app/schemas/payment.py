@@ -23,6 +23,15 @@ class PaymentCreate(BaseModel):
     bill_id: int | None = None
 
 
+class PaymentHistoryEntry(BaseModel):
+    """One confirmed payment against a document — just enough for a
+    customer's payment history on the portal detail view (§9 portal): date
+    and amount, not the full Payment record (number, journal, note, ...)."""
+
+    date: date
+    amount: Money
+
+
 class PaymentOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

@@ -405,6 +405,42 @@ def _confirmed_po(db, seed) -> PurchaseOrder:
     return order
 
 
+def test_get_vendor_bill_resolves_product_and_account_names(
+    client, db, purchase_ledger
+):
+    """A bill's lines must resolve product_name/account_name for the wire,
+    exactly like CustomerInvoiceRead already does for invoice lines.
+
+    Regression test: bill_to_out used to build each line as a raw dict with
+    no name fields at all (a bill's Product/Service column showed a raw id
+    on the portal detail view), and — once VendorBillLine grew product/
+    account relationships and bill_to_out switched to model_validate — a
+    second bug where VendorBillOut.amount_paid/amount_due/payment_status had
+    no defaults, so model_validate(bill) 500'd before those three could be
+    overwritten with the real computed values. Goes through the actual HTTP
+    routes (create-bill, confirm, get) because both bugs only manifest when
+    bill_to_out actually runs to completion on a real ORM object — every
+    other test in this file drives services/purchase.py directly and never
+    hit either one.
+    """
+    order = _confirmed_po(db, purchase_ledger)
+
+    create_response = client.post(f"/api/purchase-orders/{order.id}/create-bill")
+    assert create_response.status_code == 201, create_response.text
+    bill = create_response.json()
+    assert bill["lines"][0]["product_name"] == purchase_ledger["table"].name
+    assert bill["lines"][0]["account_name"] == purchase_ledger["purchase_expense"].name
+
+    confirm_response = client.post(f"/api/vendor-bills/{bill['id']}/confirm")
+    assert confirm_response.status_code == 200, confirm_response.text
+
+    get_response = client.get(f"/api/vendor-bills/{bill['id']}")
+    assert get_response.status_code == 200, get_response.text
+    fetched = get_response.json()
+    assert fetched["state"] == "confirmed"
+    assert fetched["lines"][0]["product_name"] == purchase_ledger["table"].name
+
+
 def test_cancelling_po_with_confirmed_bill_is_blocked(db, purchase_ledger):
     """Mirrors cancel_sales_order's Fix B on the purchase side: a confirmed
     bill's journal entry is posted and immutable (R4) — cancelling the PO

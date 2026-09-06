@@ -96,7 +96,40 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     return undefined as T;
   }
 
-  return (await response.json()) as T;
+  const body: unknown = await response.json();
+  warnIfBareArray(path, body);
+  return body as T;
+}
+
+// A caller's expected shape (the generic `T`) is erased at runtime, so this
+// can't compare "what T was requested" against "what came back" — it can
+// only flag a response shape that's already suspicious on its own. Every
+// list endpoint in this app is meant to return the Page<T> envelope
+// ({items, total, page, page_size} — SPEC.md §9 list_envelope, "no endpoint
+// ever returns an unbounded array"), so a bare array is never expected
+// regardless of the caller. That's exactly the shape GET /portal/my-documents
+// used to return: TypeScript happily let `useApi<Page<PortalDocument>>()`
+// read `.items` off it, `.items` on an array is `undefined`, and
+// MyDocuments.tsx rendered an empty list with no error and no console
+// signal. This turns that into a loud one.
+//
+// The reverse case ("caller wanted a bare array, got a Page<T> envelope")
+// genuinely can't be flagged this way: an envelope with zero items is the
+// normal, correct shape for an empty list, so there is no response-shape
+// signal that distinguishes "wrongly wrapped" from "legitimately empty"
+// without knowing the caller's intended type — which, again, doesn't exist
+// at runtime. Catching that direction would need a typed call site (e.g. a
+// small runtime schema per endpoint) rather than a shape sniff here.
+function warnIfBareArray(path: string, body: unknown): void {
+  if (Array.isArray(body)) {
+    console.warn(
+      `[api] GET ${path} returned a bare array of ${body.length} item(s). ` +
+        "Every list endpoint in this app is expected to return the " +
+        "{items, total, page, page_size} envelope (SPEC.md §9 list_envelope) " +
+        "— a caller doing `response.items` on this will silently get " +
+        "undefined and render an empty list with no error.",
+    );
+  }
 }
 
 import { getMockResponse } from "./mockData";

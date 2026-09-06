@@ -15,7 +15,7 @@ from sqlalchemy import select
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from app.core.deps import require_role
+from app.core.deps import get_current_user, require_role
 from app.core.enums import DocumentState
 from app.core.errors import AppError
 from app.core.pagination import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE, paginate
@@ -29,6 +29,7 @@ from app.models.product import Product
 from app.models.purchase import VendorBill, VendorBillLine
 from app.models.user import User
 from app.schemas.common import Page
+from app.schemas.payment import PaymentHistoryEntry
 from app.schemas.purchase import (
     VendorBillConfirmOut,
     VendorBillCreate,
@@ -106,9 +107,24 @@ def list_vendor_bills(
 def get_vendor_bill(
     bill_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role(*LEDGER_ROLES)),
+    current_user: User = Depends(get_current_user),
 ) -> VendorBillOut:
-    return bill_to_out(db, _get_or_404(db, bill_id))
+    """Any authenticated role may call this — a contact only their own
+    (mirrors routers/customer_invoices.py's get_customer_invoice exactly,
+    §9 portal / §12.2 ownership_checks). admin/accountant see any bill;
+    list_vendor_bills above stays LEDGER_ROLES-only either way.
+    """
+    bill = _get_or_404(db, bill_id)
+    if (
+        current_user.role.value == "contact"
+        and bill.vendor_id != current_user.partner_id
+    ):
+        raise AppError(
+            403,
+            "INSUFFICIENT_ROLE",
+            "You do not have permission to view this bill.",
+        )
+    return bill_to_out(db, bill)
 
 
 @router.post("", response_model=VendorBillOut, status_code=status.HTTP_201_CREATED)
@@ -275,36 +291,27 @@ def _vendor_names(db: Session, ids: list[int]) -> dict[int, str]:
 
 
 def bill_to_out(db: Session, bill: VendorBill) -> VendorBillOut:
-    """Shape a bill for the wire, with its derived payment figures."""
+    """Shape a bill for the wire, with its derived payment figures.
+
+    Built via model_validate (mirrors routers/customer_invoices.py's
+    _to_invoice_read exactly) rather than a hand-built dict per line: line-
+    level names (product_name, account_name, analytic_account_name) come
+    from VendorBillLine's own properties, resolved automatically for every
+    line the moment the parent object is validated — the same mechanism
+    CustomerInvoiceRead already relies on for its lines. Building bill.lines
+    into raw dicts here previously meant those three fields were never set,
+    so a bill's Product/Service column always showed a raw id.
+    """
     names = _vendor_names(db, [bill.vendor_id])
     summary = payments_service.bill_payment_summary(db, bill)
+    history = payments_service.payment_history_for_bill(db, bill.id)
 
-    return VendorBillOut(
-        id=bill.id,
-        number=bill.number,
-        vendor_id=bill.vendor_id,
-        vendor_name=names.get(bill.vendor_id),
-        bill_reference=bill.bill_reference,
-        bill_date=bill.bill_date,
-        due_date=bill.due_date,
-        state=bill.state,
-        total_amount=bill.total_amount,
-        source_po_id=bill.source_po_id,
-        journal_entry_id=bill.journal_entry_id,
-        amount_paid=summary.amount_paid,
-        amount_due=summary.amount_due,
-        payment_status=summary.payment_status,
-        lines=[
-            {
-                "id": line.id,
-                "product_id": line.product_id,
-                "account_id": line.account_id,
-                "analytic_account_id": line.analytic_account_id,
-                "quantity": line.quantity,
-                "unit_price": line.unit_price,
-                "line_total": line.line_total,
-                "sequence": line.sequence,
-            }
-            for line in bill.lines
-        ],
-    )
+    out = VendorBillOut.model_validate(bill)
+    out.vendor_name = names.get(bill.vendor_id)
+    out.amount_paid = summary.amount_paid
+    out.amount_due = summary.amount_due
+    out.payment_status = summary.payment_status
+    out.payments = [
+        PaymentHistoryEntry(date=line.date, amount=line.amount) for line in history
+    ]
+    return out

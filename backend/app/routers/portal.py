@@ -23,19 +23,28 @@ from app.database import get_db
 from app.models.purchase import VendorBill
 from app.models.sales import CustomerInvoice
 from app.models.user import User
+from app.schemas.common import Page
 from app.schemas.portal import PortalDocumentRow
 from app.services import payments as payments_service
 
 router = APIRouter(prefix="/portal", tags=["portal"])
 
 
-@router.get("/my-documents", response_model=list[PortalDocumentRow])
+@router.get("/my-documents", response_model=Page[PortalDocumentRow])
 def list_my_documents(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role("contact")),
-) -> list[PortalDocumentRow]:
+) -> Page[PortalDocumentRow]:
     """Invoices AND bills belonging to the CURRENT user's partner (§9: "the
     same shape as My Invoices/My Bills, filtered to current_user.partner_id").
+
+    Wrapped in the same Page[] envelope every other list endpoint in the app
+    returns (§9 list_envelope) — this one just never has more than a single
+    page's worth of rows, so page/page_size are fixed rather than accepted
+    as query params. Returning a bare array here (as this endpoint used to)
+    is exactly the "no endpoint ever returns an unbounded array" case §9
+    warns against, and it silently broke MyDocuments.tsx, which — like every
+    other page in this app — reads `data.items`.
 
     Note what is absent from the signature: no partner_id parameter of any
     kind. The filter derives entirely from current_user.partner_id, so
@@ -44,7 +53,7 @@ def list_my_documents(
     being no such parameter to read in the first place).
     """
     if current_user.partner_id is None:
-        return []
+        return Page[PortalDocumentRow](items=[], total=0, page=1, page_size=0)
 
     rows: list[PortalDocumentRow] = []
 
@@ -88,4 +97,6 @@ def list_my_documents(
             )
         )
 
-    return rows
+    return Page[PortalDocumentRow](
+        items=rows, total=len(rows), page=1, page_size=len(rows)
+    )

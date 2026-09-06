@@ -284,7 +284,15 @@ export type CustomerInvoice = {
   journal_entry_id: number | null;
 };
 
-export type CustomerInvoiceDetail = CustomerInvoice & { lines: DocumentLine[] };
+export type PaymentHistoryEntry = {
+  date: string;
+  amount: string;
+};
+
+export type CustomerInvoiceDetail = CustomerInvoice & {
+  lines: DocumentLine[];
+  payments: PaymentHistoryEntry[];
+};
 
 export type VendorBill = {
   id: number;
@@ -303,7 +311,10 @@ export type VendorBill = {
   journal_entry_id: number | null;
 };
 
-export type VendorBillDetail = VendorBill & { lines: DocumentLine[] };
+export type VendorBillDetail = VendorBill & {
+  lines: DocumentLine[];
+  payments: PaymentHistoryEntry[];
+};
 
 export type Payment = {
   id: number;

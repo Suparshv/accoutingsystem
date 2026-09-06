@@ -17,7 +17,6 @@ from app.core.search import fk_matches, ilike_any, like_pattern
 from app.database import get_db
 from app.models.partner import Partner
 from app.models.payment import Payment
-from app.models.purchase import VendorBill
 from app.models.sales import CustomerInvoice
 from app.models.user import User
 from app.schemas.common import Page
@@ -41,7 +40,17 @@ def _assert_contact_owns_target(
     invoice_id: int | None,
     bill_id: int | None,
 ) -> None:
-    """A contact may only ever pay their OWN document (§10.10, §12.2).
+    """A contact may only ever pay their OWN customer invoice — never a
+    vendor bill, regardless of ownership (§10.10, §12.2).
+
+    A vendor bill means Urban Furniture owes the vendor; the vendor side of
+    that transaction is passive (owed money, not paying it), and a 'send'
+    payment records Urban Furniture's own outgoing bank transfer, which only
+    an accountant/admin should ever create. A partner who is both a customer
+    and a vendor (partner_type='both', e.g. seed data's "Mr Rahul") could
+    otherwise pass an ownership check on their OWN bill and register a
+    payment against it — ownership alone doesn't rule this out, so bill_id
+    is refused outright before any ownership lookup runs.
 
     Every id here — partner_id, invoice_id, bill_id — comes from the request
     body, so none of it is trusted: each is checked against the document
@@ -53,6 +62,12 @@ def _assert_contact_owns_target(
             "INSUFFICIENT_ROLE",
             "You do not have permission to register this payment.",
         )
+    if bill_id is not None:
+        raise AppError(
+            403,
+            "INSUFFICIENT_ROLE",
+            "You do not have permission to register a payment against a vendor bill.",
+        )
     if invoice_id is not None:
         invoice = db.get(CustomerInvoice, invoice_id)
         if invoice is None or invoice.customer_id != current_user.partner_id:
@@ -60,14 +75,6 @@ def _assert_contact_owns_target(
                 403,
                 "INSUFFICIENT_ROLE",
                 "You do not have permission to pay this invoice.",
-            )
-    if bill_id is not None:
-        bill = db.get(VendorBill, bill_id)
-        if bill is None or bill.vendor_id != current_user.partner_id:
-            raise AppError(
-                403,
-                "INSUFFICIENT_ROLE",
-                "You do not have permission to pay this bill.",
             )
 
 
@@ -175,20 +182,30 @@ def confirm_payment(
 ) -> PaymentOut:
     """★ Atomic: the payment's state change and its journal entry, or neither.
 
-    A contact may only confirm their OWN payment — re-checked here, not only
-    at registration, because the payment id is a path parameter a contact
-    could otherwise enumerate to confirm someone else's draft (§12.2).
+    A contact may only confirm their OWN payment against their OWN customer
+    invoice — re-checked here, not only at registration, because the payment
+    id is a path parameter a contact could otherwise enumerate to confirm
+    someone else's draft (§12.2), or (were create_payment's bill_id refusal
+    ever bypassed, e.g. a draft payment an accountant created on a vendor's
+    behalf) confirm a vendor-bill payment they have no business acting on —
+    see _assert_contact_owns_target's docstring for why bill_id is refused
+    outright rather than checked for ownership.
     """
     payment = _get_or_404(db, payment_id)
-    if (
-        current_user.role.value == "contact"
-        and payment.partner_id != current_user.partner_id
-    ):
-        raise AppError(
-            403,
-            "INSUFFICIENT_ROLE",
-            "You do not have permission to confirm this payment.",
-        )
+    if current_user.role.value == "contact":
+        if payment.bill_id is not None:
+            raise AppError(
+                403,
+                "INSUFFICIENT_ROLE",
+                "You do not have permission to confirm a payment against a "
+                "vendor bill.",
+            )
+        if payment.partner_id != current_user.partner_id:
+            raise AppError(
+                403,
+                "INSUFFICIENT_ROLE",
+                "You do not have permission to confirm this payment.",
+            )
     payments_service.confirm_payment(db, payment)
     db.commit()
     db.refresh(payment)

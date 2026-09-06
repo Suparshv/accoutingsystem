@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.enums import DocumentState, UserRole
+from app.core.enums import DocumentState, PaymentType, UserRole
 from app.core.errors import AppError
 from app.core.security import encode_token, hash_password
 from app.database import get_db
@@ -22,8 +22,11 @@ from app.main import app
 from app.models.journal_entry import JournalEntry
 from app.models.partner import Partner
 from app.models.product import Product
+from app.models.purchase import VendorBill, VendorBillLine
 from app.models.sales import CustomerInvoice, SalesOrder
 from app.models.user import User
+from app.services import payments as payments_service
+from app.services import purchase as purchase_service
 from app.services import sales as sales_service
 
 
@@ -556,7 +559,7 @@ def test_portal_contact_sees_only_own_documents(
     response = rahul_contact_client.get("/api/portal/my-documents")
 
     assert response.status_code == 200
-    numbers = {row["number"] for row in response.json()}
+    numbers = {row["number"] for row in response.json()["items"]}
     assert rahul_invoice["number"] in numbers
     assert joey_invoice["number"] not in numbers
 
@@ -661,6 +664,87 @@ def test_contact_cannot_pay_another_partners_invoice(
     )
 
     assert response.status_code == 403
+
+
+def _confirmed_bill_for(db, purchase_ledger, vendor_id: int) -> VendorBill:
+    bill = VendorBill(
+        number=purchase_service.next_vendor_bill_number(db),
+        vendor_id=vendor_id,
+        bill_date=date(2026, 2, 1),
+        state=DocumentState.DRAFT,
+    )
+    bill.lines.append(
+        VendorBillLine(
+            product_id=purchase_ledger["table"].id,
+            account_id=purchase_ledger["purchase_expense"].id,
+            quantity=Decimal("1.00"),
+            unit_price=Decimal("1000.00"),
+            line_total=Decimal("1000.00"),
+            sequence=10,
+        )
+    )
+    bill.total_amount = Decimal("1000.00")
+    db.add(bill)
+    db.flush()
+    bill, _ = purchase_service.confirm_vendor_bill(db, bill)
+    return bill
+
+
+def test_contact_cannot_pay_a_vendor_bill_even_their_own(
+    rahul_contact_client, purchase_ledger, db
+):
+    """A vendor bill means Urban Furniture owes the vendor — the vendor side
+    is passive, and a 'send' payment is Urban Furniture's own outgoing
+    transfer, which only an accountant/admin may record. Ownership alone
+    doesn't rule this out for a partner who is both a customer and a vendor
+    (partner_type='both', exactly rahul_contact_client's "Mr Rahul"), so
+    bill_id must be refused outright for a contact — even against a bill
+    that genuinely is theirs.
+    """
+    bill = _confirmed_bill_for(db, purchase_ledger, purchase_ledger["partner_id"])
+
+    response = rahul_contact_client.post(
+        "/api/payments",
+        json={
+            "payment_type": "send",
+            "partner_id": purchase_ledger["partner_id"],
+            "journal_id": purchase_ledger["journal"].id,
+            "amount": "500.00",
+            "payment_date": "2026-02-05",
+            "bill_id": bill.id,
+        },
+    )
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "INSUFFICIENT_ROLE"
+
+
+def test_contact_cannot_confirm_a_payment_against_a_vendor_bill(
+    rahul_contact_client, purchase_ledger, db
+):
+    """Defense-in-depth on the confirm side: a draft bill-payment can exist
+    without ever going through create_payment's contact check (e.g. an
+    accountant registered it), so confirm_payment re-checks independently —
+    the same class of gap §12.2 already documents for invoice payments,
+    just on the direction that should never be reachable by a contact at
+    all, not merely by the wrong contact.
+    """
+    bill = _confirmed_bill_for(db, purchase_ledger, purchase_ledger["partner_id"])
+    payment = payments_service.register_payment(
+        db,
+        payment_type=PaymentType.SEND,
+        partner_id=purchase_ledger["partner_id"],
+        journal_id=purchase_ledger["journal"].id,
+        amount=Decimal("500.00"),
+        payment_date=date(2026, 2, 5),
+        bill_id=bill.id,
+    )
+    db.commit()
+
+    response = rahul_contact_client.post(f"/api/payments/{payment.id}/confirm")
+
+    assert response.status_code == 403
+    assert response.json()["error"]["code"] == "INSUFFICIENT_ROLE"
 
 
 # --- Role-based access (§10.10 route access table) ---------------------------

@@ -29,7 +29,10 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.enums import DocumentState
 from app.database import Base
+from app.models.account import Account
+from app.models.analytic import AnalyticAccount
 from app.models.base import TimestampedBase
+from app.models.product import Product
 
 MONEY = Numeric(14, 2)
 
@@ -217,6 +220,11 @@ class VendorBillLine(Base, TimestampedBase):
     )
 
     bill: Mapped[VendorBill] = relationship("VendorBill", back_populates="lines")
+    product: Mapped[Product] = relationship(Product, lazy="joined")
+    account: Mapped[Account] = relationship(Account, lazy="joined")
+    analytic_account: Mapped[AnalyticAccount | None] = relationship(
+        AnalyticAccount, lazy="joined"
+    )
 
     __table_args__ = (
         CheckConstraint("quantity > 0", name="ck_vbl_quantity_positive"),
@@ -226,3 +234,15 @@ class VendorBillLine(Base, TimestampedBase):
         # it is a sequential scan on every budget read.
         Index("ix_vbl_analytic", "analytic_account_id"),
     )
+
+    @property
+    def product_name(self) -> str | None:
+        return self.product.name if self.product else None
+
+    @property
+    def account_name(self) -> str | None:
+        return self.account.name if self.account else None
+
+    @property
+    def analytic_account_name(self) -> str | None:
+        return self.analytic_account.name if self.analytic_account else None

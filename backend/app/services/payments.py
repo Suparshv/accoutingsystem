@@ -130,6 +130,36 @@ def summarise(total_amount: Decimal, amount_paid: Decimal) -> PaymentSummary:
     )
 
 
+@dataclass(frozen=True)
+class PaymentHistoryLine:
+    """One confirmed payment against a document, for the portal detail
+    view's payment-history table — date and amount only."""
+
+    date: date_type
+    amount: Decimal
+
+
+def payment_history_for_invoice(db: Session, invoice_id: int) -> list[PaymentHistoryLine]:
+    """CONFIRMED payments against one invoice, oldest first. Drafts never
+    count — same rule as amount_paid_for_invoice, same reason (R5)."""
+    rows = db.execute(
+        select(Payment.payment_date, Payment.amount)
+        .where(Payment.invoice_id == invoice_id, Payment.state == PaymentState.CONFIRMED)
+        .order_by(Payment.payment_date, Payment.id)
+    ).all()
+    return [PaymentHistoryLine(date=row.payment_date, amount=row.amount) for row in rows]
+
+
+def payment_history_for_bill(db: Session, bill_id: int) -> list[PaymentHistoryLine]:
+    """CONFIRMED payments against one bill, oldest first."""
+    rows = db.execute(
+        select(Payment.payment_date, Payment.amount)
+        .where(Payment.bill_id == bill_id, Payment.state == PaymentState.CONFIRMED)
+        .order_by(Payment.payment_date, Payment.id)
+    ).all()
+    return [PaymentHistoryLine(date=row.payment_date, amount=row.amount) for row in rows]
+
+
 def bill_payment_summary(db: Session, bill: VendorBill) -> PaymentSummary:
     return summarise(bill.total_amount, amount_paid_for_bill(db, bill.id))
 

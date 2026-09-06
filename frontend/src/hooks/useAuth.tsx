@@ -32,7 +32,7 @@ type SignupResponse = {
 
 type AuthContextValue = {
   user: AuthenticatedUser | null;
-  login: (loginId: string, password: string) => Promise<void>;
+  login: (loginId: string, password: string) => Promise<AuthenticatedUser>;
   signup: (params: {
     loginId: string;
     email: string;
@@ -71,6 +71,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
     setAuthToken(response.access_token);
     setUser(response.user);
+    // Returned directly (not read back from `user` state) so the caller can
+    // route on the fresh role immediately — reading the `user` state right
+    // after this resolves would still see the pre-login render's value,
+    // since the setUser above hasn't been committed yet.
+    return response.user;
   }, []);
 
   const signup = useCallback(

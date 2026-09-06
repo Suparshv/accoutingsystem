@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.core.enums import DocumentState, PaymentStatus
 from app.schemas.common import Money
+from app.schemas.payment import PaymentHistoryEntry
 
 
 class PurchaseOrderLineIn(BaseModel):
@@ -92,8 +94,11 @@ class VendorBillLineOut(BaseModel):
 
     id: int
     product_id: int
+    product_name: str | None = None
     account_id: int
+    account_name: str | None = None
     analytic_account_id: int | None = None
+    analytic_account_name: str | None = None
     quantity: Money
     unit_price: Money
     line_total: Money
@@ -139,10 +144,15 @@ class VendorBillOut(BaseModel):
     # exactly when this is set.
     source_po_id: int | None = None
     journal_entry_id: int | None = None
-    # Derived on read from confirmed payments, never stored (R5).
-    amount_paid: Money
-    amount_due: Money
-    payment_status: PaymentStatus
+    # Derived on read from confirmed payments, never stored (R5). Defaulted
+    # (mirrors CustomerInvoiceRead) so model_validate(bill) succeeds against
+    # the plain ORM object before bill_to_out overwrites them with the real
+    # computed values — these three don't exist as attributes on VendorBill.
+    amount_paid: Money = Decimal("0.00")
+    amount_due: Money = Decimal("0.00")
+    payment_status: PaymentStatus = PaymentStatus.NOT_PAID
+    # Confirmed payments against this bill, oldest first (§9 portal).
+    payments: list[PaymentHistoryEntry] = []
     lines: list[VendorBillLineOut] = []
 
 

@@ -287,6 +287,7 @@ export const MOCK_SALES_ORDERS: SalesOrder[] = [
 export const MOCK_SALES_ORDER_DETAILS: Record<number, SalesOrderDetail> = {
   1: {
     ...MOCK_SALES_ORDERS[0],
+    invoice_id: null,
     lines: [
       {
         id: 1,
@@ -322,6 +323,7 @@ export const MOCK_SALES_ORDER_DETAILS: Record<number, SalesOrderDetail> = {
   },
   2: {
     ...MOCK_SALES_ORDERS[1],
+    invoice_id: null,
     lines: [
       {
         id: 4,
@@ -337,6 +339,7 @@ export const MOCK_SALES_ORDER_DETAILS: Record<number, SalesOrderDetail> = {
   },
   3: {
     ...MOCK_SALES_ORDERS[2],
+    invoice_id: null,
     lines: [
       {
         id: 5,
@@ -390,6 +393,7 @@ export const MOCK_CUSTOMER_INVOICES: CustomerInvoice[] = [
 export const MOCK_CUSTOMER_INVOICE_DETAILS: Record<number, CustomerInvoiceDetail> = {
   1: {
     ...MOCK_CUSTOMER_INVOICES[0],
+    payments: [],
     lines: [
       {
         id: 1,
@@ -428,6 +432,7 @@ export const MOCK_CUSTOMER_INVOICE_DETAILS: Record<number, CustomerInvoiceDetail
   },
   2: {
     ...MOCK_CUSTOMER_INVOICES[1],
+    payments: [],
     lines: [
       {
         id: 4,
@@ -468,6 +473,7 @@ export const MOCK_PURCHASE_ORDERS: PurchaseOrder[] = [
 export const MOCK_PURCHASE_ORDER_DETAILS: Record<number, PurchaseOrderDetail> = {
   1: {
     ...MOCK_PURCHASE_ORDERS[0],
+    bill_id: null,
     lines: [
       {
         id: 1,
@@ -483,6 +489,7 @@ export const MOCK_PURCHASE_ORDER_DETAILS: Record<number, PurchaseOrderDetail> = 
   },
   2: {
     ...MOCK_PURCHASE_ORDERS[1],
+    bill_id: null,
     lines: [
       {
         id: 2,
@@ -536,6 +543,7 @@ export const MOCK_VENDOR_BILLS: VendorBill[] = [
 export const MOCK_VENDOR_BILL_DETAILS: Record<number, VendorBillDetail> = {
   1: {
     ...MOCK_VENDOR_BILLS[0],
+    payments: [],
     lines: [
       {
         id: 1,
@@ -552,6 +560,7 @@ export const MOCK_VENDOR_BILL_DETAILS: Record<number, VendorBillDetail> = {
   },
   2: {
     ...MOCK_VENDOR_BILLS[1],
+    payments: [],
     lines: [
       {
         id: 2,

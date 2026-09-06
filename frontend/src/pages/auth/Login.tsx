@@ -7,7 +7,7 @@ import { FieldError } from "@/components/shared/FieldError";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useAuth } from "@/hooks/useAuth";
+import { useAuth, type AuthenticatedUser } from "@/hooks/useAuth";
 import { normaliseError } from "@/lib/api";
 import { applyServerErrors } from "@/lib/form-errors";
 
@@ -16,6 +16,24 @@ const loginSchema = z.object({
   password: z.string().min(1, "Password is required"),
 });
 type LoginFormValues = z.infer<typeof loginSchema>;
+
+// A contact only ever has the portal to go to (SPEC.md §13.3 role_visibility:
+// "contact: sees ONLY the portal"). Every other route 403s on its own API
+// calls (e.g. GET /dashboard), so routing a contact into one is never useful
+// — not even a route they were bounced FROM before logging in, unless that
+// bounced route is itself a portal page.
+const CONTACT_HOME = "/portal/invoices";
+const PORTAL_PREFIX = "/portal/";
+
+function postLoginDestination(
+  user: AuthenticatedUser,
+  from: { pathname: string } | undefined,
+): string {
+  if (user.role === "contact") {
+    return from?.pathname.startsWith(PORTAL_PREFIX) ? from.pathname : CONTACT_HOME;
+  }
+  return from?.pathname ?? "/";
+}
 
 export default function Login() {
   const { login, loginDemo } = useAuth();
@@ -33,9 +51,9 @@ export default function Login() {
   async function onSubmit(values: LoginFormValues) {
     setFormError(null);
     try {
-      await login(values.login_id, values.password);
+      const user = await login(values.login_id, values.password);
       const from = (location.state as { from?: { pathname: string } } | null)?.from;
-      navigate(from?.pathname ?? "/", { replace: true });
+      navigate(postLoginDestination(user, from), { replace: true });
     } catch (e) {
       const apiError = normaliseError(e);
       // 401 INVALID_CREDENTIALS is deliberately not field-specific (SPEC.md

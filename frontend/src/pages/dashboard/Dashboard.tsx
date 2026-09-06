@@ -1,3 +1,5 @@
+import { useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useApi } from "@/hooks/useApi";
@@ -8,8 +10,30 @@ import type { DashboardStats } from "@/types/api";
 // exactly the App Dashboard tiles in the mockup.
 export default function Dashboard() {
   const { user } = useAuth();
+  const navigate = useNavigate();
+  // Belt-and-suspenders alongside Login.tsx's role-aware post-login
+  // destination: a contact should never even attempt GET /dashboard (the API
+  // 403s it, since §9's role table gives dashboard access to admin/accountant
+  // only) — if one lands here some other way, redirect client-side instead
+  // of letting the fetch fire and fail closed on the response.
+  const isContact = user?.role === "contact";
+
+  useEffect(() => {
+    if (isContact) {
+      navigate("/portal/invoices", { replace: true });
+    }
+  }, [isContact, navigate]);
+
   const path = "/dashboard";
-  const { data, loading, error, refetch } = useApi<DashboardStats>(path, [path]);
+  const { data, loading, error, refetch } = useApi<DashboardStats>(
+    path,
+    [path],
+    !isContact,
+  );
+
+  if (isContact) {
+    return null;
+  }
 
   return (
     <div className="flex flex-col gap-6">

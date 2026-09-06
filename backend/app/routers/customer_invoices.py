@@ -22,6 +22,7 @@ from app.models.product import Product
 from app.models.sales import CustomerInvoice, CustomerInvoiceLine
 from app.models.user import User
 from app.schemas.common import Page
+from app.schemas.payment import PaymentHistoryEntry
 from app.schemas.sales import (
     CustomerInvoiceConfirmResponse,
     CustomerInvoiceCreate,
@@ -95,10 +96,14 @@ def _to_invoice_read(db: Session, invoice: CustomerInvoice) -> CustomerInvoiceRe
     """Attach the derived, never-stored payment fields (§7.7, P5), computed
     for real from confirmed payments — never hardcoded."""
     summary = payments_service.invoice_payment_summary(db, invoice.id)
+    history = payments_service.payment_history_for_invoice(db, invoice.id)
     read = CustomerInvoiceRead.model_validate(invoice)
     read.amount_paid = summary.amount_paid
     read.amount_due = summary.amount_due
     read.payment_status = PaymentStatus(summary.payment_status)
+    read.payments = [
+        PaymentHistoryEntry(date=line.date, amount=line.amount) for line in history
+    ]
     return read
 
 
